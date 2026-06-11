@@ -1,0 +1,41 @@
+name: family_finance
+description: Family Finance Manager — salary, expenses, EMIs, targets and a shared family wallet, stored as Excel files on Google Drive.
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+
+  # State management
+  provider: ^6.1.2
+
+  # Auth + Google Drive
+  google_sign_in: ^6.2.1
+  googleapis: ^13.2.0
+  googleapis_auth: ^1.6.0
+  extension_google_sign_in_as_googleapis_auth: ^2.0.12
+  http: ^1.2.2
+
+  # Excel storage (dynamic-value API; stable and simple)
+  excel: ^2.1.0
+
+  # Local cache / preferences
+  shared_preferences: ^2.3.2
+  path_provider: ^2.1.4
+
+  # UI / charts / formatting
+  fl_chart: ^0.69.0
+  intl: ^0.19.0
+
+dev_dependencies:
+  flutter_lints: ^4.0.0
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true

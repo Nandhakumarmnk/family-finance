@@ -1,0 +1,178 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../models/salary.dart';
+import '../state/app_state.dart';
+import '../utils/format.dart';
+import '../widgets/common.dart';
+
+/// Salary / income list with add + delete.
+class SalaryScreen extends StatelessWidget {
+  const SalaryScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final s = context.watch<AppState>();
+    final cur = s.currency;
+    final items = [...s.salaries]..sort((a, b) => b.date.compareTo(a.date));
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Salary / Income')),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _addDialog(context),
+        icon: const Icon(Icons.add),
+        label: const Text('Add income'),
+      ),
+      body: items.isEmpty
+          ? const EmptyState(
+              icon: Icons.payments_outlined,
+              message: 'No income recorded yet.\nTap “Add income” to start.')
+          : ListView.separated(
+              padding: const EdgeInsets.all(12),
+              itemCount: items.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              itemBuilder: (_, i) {
+                final s0 = items[i];
+                return Card(
+                  child: ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: Colors.green.shade50,
+                      child: Icon(Icons.south_west, color: Colors.green.shade700),
+                    ),
+                    title: Text(s0.source),
+                    subtitle: Text(
+                        '${Fmt.date(s0.date)}${s0.notes.isNotEmpty ? ' • ${s0.notes}' : ''}'),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(Fmt.currency(s0.amount, code: cur),
+                            style: const TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 16)),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline),
+                          onPressed: () => context.read<AppState>().deleteSalary(s0.id),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+    );
+  }
+
+  void _addDialog(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => const _SalaryForm(),
+    );
+  }
+}
+
+class _SalaryForm extends StatefulWidget {
+  const _SalaryForm();
+
+  @override
+  State<_SalaryForm> createState() => _SalaryFormState();
+}
+
+class _SalaryFormState extends State<_SalaryForm> {
+  final _form = GlobalKey<FormState>();
+  final _source = TextEditingController(text: 'Primary salary');
+  final _amount = TextEditingController();
+  final _notes = TextEditingController();
+  DateTime _date = DateTime.now();
+
+  @override
+  void dispose() {
+    _source.dispose();
+    _amount.dispose();
+    _notes.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (!_form.currentState!.validate()) return;
+    await context.read<AppState>().addSalary(Salary(
+          id: newId('sal'),
+          date: _date,
+          source: _source.text.trim(),
+          amount: double.parse(_amount.text.trim()),
+          notes: _notes.text.trim(),
+        ));
+    if (mounted) Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 16,
+        right: 16,
+        top: 8,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+      ),
+      child: Form(
+        key: _form,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('Add income', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _source,
+              decoration: const InputDecoration(labelText: 'Source'),
+              validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _amount,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(labelText: 'Amount', prefixIcon: Icon(Icons.currency_rupee)),
+              validator: (v) => double.tryParse(v ?? '') == null ? 'Enter a valid number' : null,
+            ),
+            const SizedBox(height: 12),
+            _DatePickerTile(date: _date, onChanged: (d) => setState(() => _date = d)),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _notes,
+              decoration: const InputDecoration(labelText: 'Notes (optional)'),
+            ),
+            const SizedBox(height: 16),
+            FilledButton(onPressed: _submit, child: const Text('Save')),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Reusable date picker tile used by several forms.
+class _DatePickerTile extends StatelessWidget {
+  final DateTime date;
+  final ValueChanged<DateTime> onChanged;
+  const _DatePickerTile({required this.date, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: () async {
+        final picked = await showDatePicker(
+          context: context,
+          initialDate: date,
+          firstDate: DateTime(2015),
+          lastDate: DateTime(2100),
+        );
+        if (picked != null) onChanged(picked);
+      },
+      child: InputDecorator(
+        decoration: const InputDecoration(labelText: 'Date', prefixIcon: Icon(Icons.event)),
+        child: Text(Fmt.date(date)),
+      ),
+    );
+  }
+}
