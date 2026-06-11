@@ -1,0 +1,67 @@
+name: Deploy Web to GitHub Pages
+
+# Builds the Flutter web app and publishes it to GitHub Pages.
+# The live site replaces the README page at:
+#   https://nandhakumarmnk.github.io/family-finance/
+#
+# One-time setup required in the repo:
+#   Settings > Pages > Build and deployment > Source = "GitHub Actions"
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+# Permissions needed for the Pages deployment.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent deployment; don't cancel a running one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Generate platform folders (web)
+        # The repo only ships lib/ + pubspec; this regenerates web/ etc.
+        # It will NOT overwrite existing lib/ source.
+        run: flutter create . --org net.ramrajcotton --project-name family_finance --platforms web
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build web
+        # base-href MUST match the repo subpath so assets resolve correctly.
+        run: flutter build web --release --base-href /family-finance/
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
