@@ -383,10 +383,19 @@ class AppState extends ChangeNotifier {
   /// which surfaces as a null-check / DEVELOPER_ERROR (ApiException 10).
   String _friendlyError(Object e) {
     final s = e.toString();
-    if (s.contains('Null check operator') ||
+    final isConfig = s.contains('Null check operator') ||
         s.contains('ApiException: 10') ||
         s.contains('sign_in_failed') ||
-        s.contains('DEVELOPER_ERROR')) {
+        s.contains('DEVELOPER_ERROR') ||
+        s.contains('idpiframe') ||
+        s.contains('popup') ||
+        s.contains('origin');
+    if (isConfig) {
+      if (kIsWeb) {
+        return 'Google Sign-In is not set up for the web app yet.\n\n'
+            'A Web OAuth client must list this site as an authorized '
+            'JavaScript origin, and its client ID must be embedded in the page.';
+      }
       return 'Google Sign-In is not set up for this app build yet.\n\n'
           "This build's signing fingerprint (SHA-1) must be registered with "
           'an Android OAuth client in Google Cloud Console, for the package '
