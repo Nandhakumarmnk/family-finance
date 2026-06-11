@@ -7,11 +7,19 @@ import 'package:http/http.dart' as http;
 /// Drive service uses. We request the `drive.file` scope which grants access
 /// only to files this app creates — the least-privilege option for Drive.
 class AuthService {
+  /// OAuth *Web* client ID, injected at build time via
+  /// `--dart-define=GOOGLE_SERVER_CLIENT_ID=...`. Required on Android so the
+  /// sign-in can mint tokens for the requested Drive scope. Empty in local
+  /// dev builds (sign-in then falls back to the platform default config).
+  static const String _serverClientId =
+      String.fromEnvironment('GOOGLE_SERVER_CLIENT_ID');
+
   final GoogleSignIn _googleSignIn = GoogleSignIn(
     scopes: <String>[
       'email',
       drive.DriveApi.driveFileScope,
     ],
+    serverClientId: _serverClientId.isEmpty ? null : _serverClientId,
   );
 
   GoogleSignInAccount? _account;

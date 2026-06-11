@@ -374,8 +374,25 @@ class AppState extends ChangeNotifier {
 
   void _fail(Object e) {
     status = AppStatus.error;
-    error = e.toString();
+    error = _friendlyError(e);
     notifyListeners();
+  }
+
+  /// Turn opaque platform errors into something a user can act on. The most
+  /// common one on a fresh build is a Google Sign-In configuration problem,
+  /// which surfaces as a null-check / DEVELOPER_ERROR (ApiException 10).
+  String _friendlyError(Object e) {
+    final s = e.toString();
+    if (s.contains('Null check operator') ||
+        s.contains('ApiException: 10') ||
+        s.contains('sign_in_failed') ||
+        s.contains('DEVELOPER_ERROR')) {
+      return 'Google Sign-In is not set up for this app build yet.\n\n'
+          "This build's signing fingerprint (SHA-1) must be registered with "
+          'an Android OAuth client in Google Cloud Console, for the package '
+          'net.ramrajcotton.family_finance.';
+    }
+    return s;
   }
 
   void clearError() {
