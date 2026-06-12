@@ -9,6 +9,7 @@ import '../models/target.dart';
 import '../models/user_profile.dart';
 import '../models/wallet_entry.dart';
 import '../services/auth_service.dart';
+import '../services/backend_service.dart';
 import '../services/drive_service.dart';
 import '../services/finance_repository.dart';
 
@@ -98,6 +99,9 @@ class AppState extends ChangeNotifier {
 
   Future<void> _onSignedIn() async {
     final account = _auth.account!;
+    // Register with the daily-report backend (no-op unless one is configured).
+    // Fire-and-forget so it never blocks or breaks sign-in.
+    BackendService.linkForDailyReport(account.serverAuthCode);
     final client = await _auth.authenticatedClient();
     if (client == null) {
       throw StateError('Could not obtain an authenticated Google client.');

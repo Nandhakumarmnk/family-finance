@@ -60,7 +60,15 @@ jobs:
 
       - name: Build web
         # base-href MUST match the repo subpath so assets resolve correctly.
-        run: flutter build web --release --base-href /family-finance/
+        # GOOGLE_SERVER_CLIENT_ID lets web sign-in mint an offline serverAuthCode;
+        # GOOGLE_BACKEND_URL points at the optional daily-report backend.
+        env:
+          SCID: ${{ vars.GOOGLE_SERVER_CLIENT_ID }}
+          BURL: ${{ vars.GOOGLE_BACKEND_URL }}
+        run: |
+          flutter build web --release --base-href /family-finance/ \
+            --dart-define=GOOGLE_SERVER_CLIENT_ID=$SCID \
+            --dart-define=GOOGLE_BACKEND_URL=$BURL
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

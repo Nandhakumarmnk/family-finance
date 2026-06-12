@@ -53,15 +53,23 @@ jobs:
 
       - name: Build debug APK (always installable)
         # GOOGLE_SERVER_CLIENT_ID is your OAuth *Web* client ID (not a secret).
-        # Stored as a repo variable so it's baked into the build.
+        # GOOGLE_BACKEND_URL points at the optional daily-report backend.
         env:
           SCID: ${{ vars.GOOGLE_SERVER_CLIENT_ID }}
-        run: flutter build apk --debug --dart-define=GOOGLE_SERVER_CLIENT_ID=$SCID
+          BURL: ${{ vars.GOOGLE_BACKEND_URL }}
+        run: |
+          flutter build apk --debug \
+            --dart-define=GOOGLE_SERVER_CLIENT_ID=$SCID \
+            --dart-define=GOOGLE_BACKEND_URL=$BURL
 
       - name: Build release APK (debug-signed by default)
         env:
           SCID: ${{ vars.GOOGLE_SERVER_CLIENT_ID }}
-        run: flutter build apk --release --dart-define=GOOGLE_SERVER_CLIENT_ID=$SCID
+          BURL: ${{ vars.GOOGLE_BACKEND_URL }}
+        run: |
+          flutter build apk --release \
+            --dart-define=GOOGLE_SERVER_CLIENT_ID=$SCID \
+            --dart-define=GOOGLE_BACKEND_URL=$BURL
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
