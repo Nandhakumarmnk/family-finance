@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../services/backend_service.dart';
 import '../state/app_state.dart';
 import 'activity_screen.dart';
 import 'add_details_screen.dart';
@@ -57,13 +58,15 @@ class _HomeShellState extends State<HomeShell> {
           PopupMenuButton<String>(
             icon: _avatar(state),
             onSelected: (v) => _onMenu(context, v),
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'details', child: _MenuRow(Icons.person, 'My Details')),
-              PopupMenuItem(value: 'salary', child: _MenuRow(Icons.payments, 'Salary / Income')),
-              PopupMenuItem(value: 'activity', child: _MenuRow(Icons.history, 'Activity & changes')),
-              PopupMenuItem(value: 'master', child: _MenuRow(Icons.groups, 'Users / Master')),
-              PopupMenuDivider(),
-              PopupMenuItem(value: 'signout', child: _MenuRow(Icons.logout, 'Sign out')),
+            itemBuilder: (_) => [
+              const PopupMenuItem(value: 'details', child: _MenuRow(Icons.person, 'My Details')),
+              const PopupMenuItem(value: 'salary', child: _MenuRow(Icons.payments, 'Salary / Income')),
+              const PopupMenuItem(value: 'activity', child: _MenuRow(Icons.history, 'Activity & changes')),
+              if (BackendService.isConfigured)
+                const PopupMenuItem(value: 'report', child: _MenuRow(Icons.mark_email_read_outlined, 'Email me a report')),
+              const PopupMenuItem(value: 'master', child: _MenuRow(Icons.groups, 'Users / Master')),
+              const PopupMenuDivider(),
+              const PopupMenuItem(value: 'signout', child: _MenuRow(Icons.logout, 'Sign out')),
             ],
           ),
         ],
@@ -107,6 +110,9 @@ class _HomeShellState extends State<HomeShell> {
       case 'activity':
         _push(context, const ActivityScreen());
         break;
+      case 'report':
+        _emailReport(context);
+        break;
       case 'master':
         _push(context, const MasterScreen());
         break;
@@ -118,6 +124,23 @@ class _HomeShellState extends State<HomeShell> {
 
   void _push(BuildContext context, Widget page) {
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
+  }
+
+  Future<void> _emailReport(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final state = context.read<AppState>();
+    messenger.showSnackBar(
+      const SnackBar(content: Text('Sending your report…')),
+    );
+    final ok = await state.sendReportEmailNow();
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(ok
+            ? 'Report emailed — check your inbox ✓'
+            : 'Could not send the report (is the backend set up?)'),
+      ),
+    );
   }
 }
 

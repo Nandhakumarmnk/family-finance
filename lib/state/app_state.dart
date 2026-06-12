@@ -284,7 +284,56 @@ class AppState extends ChangeNotifier {
     p.familyName = familyName.trim();
     await _persistPersonal();
     await _loadFamily();
+    // One-time backfill: push this user's existing income/expenses into the
+    // shared ledger so they show up in the family report immediately.
+    if (_backfillFamilyLedger()) await _persistFamily();
     notifyListeners();
+  }
+
+  /// Add any personal income/expenses missing from the shared family ledger.
+  /// Idempotent (keyed by entry id). Returns true if anything was added.
+  bool _backfillFamilyLedger() {
+    if (_family == null || _personal == null) return false;
+    final existing = _family!.ledger.map((e) => e.id).toSet();
+    var changed = false;
+    for (final e in _personal!.expenses) {
+      if (existing.contains(e.id)) continue;
+      _family!.ledger.add(FamilyLedgerEntry(
+        id: e.id,
+        date: e.date,
+        memberEmail: _personal!.profile.email,
+        memberName: _personal!.profile.displayName,
+        type: 'expense',
+        category: e.category,
+        amount: e.amount,
+        notes: e.notes,
+      ));
+      changed = true;
+    }
+    for (final s in _personal!.salaries) {
+      if (existing.contains(s.id)) continue;
+      _family!.ledger.add(FamilyLedgerEntry(
+        id: s.id,
+        date: s.date,
+        memberEmail: _personal!.profile.email,
+        memberName: _personal!.profile.displayName,
+        type: 'income',
+        category: s.source,
+        amount: s.amount,
+        notes: s.notes,
+      ));
+      changed = true;
+    }
+    return changed;
+  }
+
+  /// Trigger an immediate report email to the signed-in user (and, for a
+  /// parent, the family report). Returns true on success. No-op without a
+  /// configured backend.
+  Future<bool> sendReportEmailNow() async {
+    if (!BackendService.isConfigured) return false;
+    final token = await _auth.idToken();
+    return BackendService.sendReportNow(token);
   }
 
   Future<void> addOrUpdateMember(Member m) async {

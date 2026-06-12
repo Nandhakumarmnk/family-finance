@@ -64,6 +64,15 @@ class AuthService {
     _account = null;
   }
 
+  /// The signed-in user's Google ID token — used to authenticate on-demand
+  /// requests to the report backend. Null if not signed in.
+  Future<String?> idToken() async {
+    final account = _account;
+    if (account == null) return null;
+    final auth = await account.authentication;
+    return auth.idToken;
+  }
+
   /// An authenticated client suitable for the googleapis Drive client.
   /// Returns null if not signed in.
   Future<http.Client?> authenticatedClient() async {

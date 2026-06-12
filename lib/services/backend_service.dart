@@ -28,6 +28,7 @@ class BackendService {
             Uri.parse(_baseUrl),
             headers: const {'Content-Type': 'application/json'},
             body: jsonEncode({
+              'action': 'link',
               'serverAuthCode': serverAuthCode,
               'familyId': familyId,
               'role': role,
@@ -36,6 +37,24 @@ class BackendService {
           .timeout(const Duration(seconds: 15));
     } catch (_) {
       // Intentionally swallowed — never disrupt the sign-in flow.
+    }
+  }
+
+  /// Ask the backend to email the report to the signed-in user right now
+  /// (verified by their Google ID token). Returns true on success.
+  static Future<bool> sendReportNow(String? idToken) async {
+    if (_baseUrl.isEmpty || idToken == null || idToken.isEmpty) return false;
+    try {
+      final resp = await http
+          .post(
+            Uri.parse(_baseUrl),
+            headers: const {'Content-Type': 'application/json'},
+            body: jsonEncode({'action': 'sendNow', 'idToken': idToken}),
+          )
+          .timeout(const Duration(seconds: 25));
+      return resp.statusCode == 200;
+    } catch (_) {
+      return false;
     }
   }
 }

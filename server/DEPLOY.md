@@ -4,9 +4,13 @@ A Google Cloud Functions (gen2) backend that emails every user a daily
 "full snapshot" of their finances, read from their own Google Drive workbook.
 
 ```
-App (sign-in)  ──serverAuthCode──▶  linkUser  ──▶  Firestore {email, refreshToken}
-Cloud Scheduler (daily) ──▶ sendDailyReports ──▶ Drive read ──▶ Resend email
+App (sign-in)        ──{action:link, serverAuthCode}──▶  api  ──▶ Firestore {email, refreshToken, role, familyId}
+App ("email me now")  ──{action:sendNow, idToken}─────▶  api  ──▶ Drive read ──▶ Resend email
+Cloud Scheduler (daily) ─────────────────────────────▶  sendDailyReports ──▶ Drive read ──▶ Resend email
 ```
+
+Every member gets their personal report; a member whose `role` is `parent`
+(the family Owner) also gets the consolidated **family** report.
 
 ## 0. Prerequisites
 - The `gcloud` CLI installed and logged in: `gcloud auth login`
@@ -36,26 +40,31 @@ APIs & Services → Credentials → your **Web application** client → copy the
 ## 4. Deploy the two functions
 From the `server/` folder:
 
+Set these once to avoid repetition:
 ```bash
-# Called by the app — must be public.
-gcloud functions deploy linkUser \
+ENV="GOOGLE_CLIENT_ID=YOUR_WEB_CLIENT_ID,GOOGLE_CLIENT_SECRET=YOUR_WEB_SECRET,RESEND_API_KEY=YOUR_RESEND_KEY,REPORT_FROM=Family Finance <onboarding@resend.dev>"
+```
+
+```bash
+# Public endpoint the app calls (link + "email me now").
+gcloud functions deploy api \
   --gen2 --runtime=nodejs20 --region=asia-south1 \
-  --source=. --entry-point=linkUser --trigger-http --allow-unauthenticated \
-  --set-env-vars=GOOGLE_CLIENT_ID=YOUR_WEB_CLIENT_ID,GOOGLE_CLIENT_SECRET=YOUR_WEB_SECRET,RESEND_API_KEY=YOUR_RESEND_KEY,"REPORT_FROM=Family Finance <onboarding@resend.dev>"
+  --source=. --entry-point=api --trigger-http --allow-unauthenticated \
+  --set-env-vars="$ENV"
 
 # Called only by Scheduler — keep private.
 gcloud functions deploy sendDailyReports \
   --gen2 --runtime=nodejs20 --region=asia-south1 \
   --source=. --entry-point=sendDailyReports --trigger-http --no-allow-unauthenticated \
-  --set-env-vars=GOOGLE_CLIENT_ID=YOUR_WEB_CLIENT_ID,GOOGLE_CLIENT_SECRET=YOUR_WEB_SECRET,RESEND_API_KEY=YOUR_RESEND_KEY,"REPORT_FROM=Family Finance <onboarding@resend.dev>"
+  --set-env-vars="$ENV"
 ```
 
-Note the **linkUser URL** printed at the end (looks like
-`https://asia-south1-family-finance-499112.cloudfunctions.net/linkUser`).
+Note the **api URL** printed at the end (looks like
+`https://asia-south1-family-finance-499112.cloudfunctions.net/api`).
 
-## 5. Wire the app to linkUser
+## 5. Wire the app to the api endpoint
 In the GitHub repo: **Settings → Secrets and variables → Actions → Variables** →
-new variable **`GOOGLE_BACKEND_URL`** = the linkUser URL from step 4.
+new variable **`GOOGLE_BACKEND_URL`** = the **api** URL from step 4.
 Then re-run **Deploy Web** / **Build APK** so the app posts the offline code on sign-in.
 
 ## 6. Schedule the daily send (e.g. 7:00 AM IST)
