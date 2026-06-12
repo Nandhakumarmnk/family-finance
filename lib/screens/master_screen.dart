@@ -84,7 +84,8 @@ class MasterScreen extends StatelessWidget {
           Flexible(child: Text(m.name)),
           if (isSelf) const Padding(padding: EdgeInsets.only(left: 6), child: Chip(label: Text('You'), visualDensity: VisualDensity.compact)),
         ]),
-        subtitle: Text('${m.email}\n${m.role}${m.active ? '' : ' • inactive'}'),
+        subtitle: Text('${m.email}\n${m.role} • ${m.relationship}'
+            '${m.active ? '' : ' • inactive'}'),
         isThreeLine: true,
         trailing: PopupMenuButton<String>(
           onSelected: (v) {
@@ -130,6 +131,8 @@ class MasterScreen extends StatelessWidget {
     final name = TextEditingController(text: existing?.name ?? '');
     final phone = TextEditingController(text: existing?.phone ?? '');
     String role = existing?.role ?? 'Adult';
+    String relationship = existing?.relationship ?? 'Other';
+    if (!Member.relationships.contains(relationship)) relationship = 'Other';
     bool active = existing?.active ?? true;
     bool invite = existing == null;
 
@@ -158,6 +161,15 @@ class MasterScreen extends StatelessWidget {
                   decoration: const InputDecoration(labelText: 'Role'),
                   items: Member.roles.map((r) => DropdownMenuItem(value: r, child: Text(r))).toList(),
                   onChanged: (v) => setS(() => role = v ?? role),
+                ),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  value: relationship,
+                  decoration: const InputDecoration(labelText: 'Relationship'),
+                  items: Member.relationships
+                      .map((r) => DropdownMenuItem(value: r, child: Text(r)))
+                      .toList(),
+                  onChanged: (v) => setS(() => relationship = v ?? relationship),
                 ),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
@@ -190,6 +202,7 @@ class MasterScreen extends StatelessWidget {
       email: email.text.trim(),
       name: name.text.trim().isEmpty ? email.text.split('@').first : name.text.trim(),
       role: role,
+      relationship: relationship,
       phone: phone.text.trim(),
       active: active,
     );

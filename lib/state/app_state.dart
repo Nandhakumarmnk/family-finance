@@ -146,6 +146,7 @@ class AppState extends ChangeNotifier {
         email: p.email,
         name: p.displayName,
         role: 'Owner',
+        relationship: 'Self',
         phone: p.phone,
       ),
     );
@@ -344,12 +345,14 @@ class AppState extends ChangeNotifier {
 
   Future<void> addOrUpdateMember(Member m) async {
     final idx = _family!.members.indexWhere((e) => e.email == m.email);
+    final isNew = idx < 0;
     if (idx >= 0) {
       _family!.members[idx] = m;
     } else {
       _family!.members.add(m);
     }
     await _persistFamily();
+    _celebrate(isNew ? 'Member added' : 'Member updated');
   }
 
   Future<void> removeMember(String email) async {
