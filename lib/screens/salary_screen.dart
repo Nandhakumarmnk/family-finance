@@ -84,6 +84,7 @@ class _SalaryFormState extends State<_SalaryForm> {
   final _amount = TextEditingController();
   final _notes = TextEditingController();
   DateTime _date = DateTime.now();
+  bool _saving = false;
 
   @override
   void dispose() {
@@ -94,7 +95,9 @@ class _SalaryFormState extends State<_SalaryForm> {
   }
 
   Future<void> _submit() async {
+    if (_saving) return; // guard against double/triple taps while saving
     if (!_form.currentState!.validate()) return;
+    setState(() => _saving = true);
     await context.read<AppState>().addSalary(Salary(
           id: newId('sal'),
           date: _date,
@@ -142,7 +145,15 @@ class _SalaryFormState extends State<_SalaryForm> {
               decoration: const InputDecoration(labelText: 'Notes (optional)'),
             ),
             const SizedBox(height: 16),
-            FilledButton(onPressed: _submit, child: const Text('Save')),
+            FilledButton(
+              onPressed: _saving ? null : _submit,
+              child: _saving
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Text('Save'),
+            ),
           ],
         ),
       ),

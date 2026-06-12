@@ -161,6 +161,7 @@ class _ExpenseFormState extends State<_ExpenseForm> {
   String _mode = 'UPI';
   DateTime _date = DateTime.now();
   bool _fromWallet = false;
+  bool _saving = false;
 
   static const _modes = ['UPI', 'Cash', 'Card', 'Bank'];
 
@@ -172,7 +173,9 @@ class _ExpenseFormState extends State<_ExpenseForm> {
   }
 
   Future<void> _submit() async {
+    if (_saving) return; // guard against double/triple taps while saving
     if (!_form.currentState!.validate()) return;
+    setState(() => _saving = true);
     await context.read<AppState>().addExpense(Expense(
           id: newId('exp'),
           date: _date,
@@ -245,7 +248,15 @@ class _ExpenseFormState extends State<_ExpenseForm> {
                   onChanged: (v) => setState(() => _fromWallet = v),
                 ),
               const SizedBox(height: 8),
-              FilledButton(onPressed: _submit, child: const Text('Save')),
+              FilledButton(
+                onPressed: _saving ? null : _submit,
+                child: _saving
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Text('Save'),
+              ),
             ],
           ),
         ),

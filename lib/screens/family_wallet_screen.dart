@@ -163,6 +163,7 @@ class _WalletFormState extends State<_WalletForm> {
   final _purpose = TextEditingController();
   WalletDirection _dir = WalletDirection.topUp;
   DateTime _date = DateTime.now();
+  bool _saving = false;
 
   @override
   void dispose() {
@@ -172,7 +173,9 @@ class _WalletFormState extends State<_WalletForm> {
   }
 
   Future<void> _submit() async {
+    if (_saving) return; // guard against double/triple taps while saving
     if (!_form.currentState!.validate()) return;
+    setState(() => _saving = true);
     final p = context.read<AppState>().profile!;
     await context.read<AppState>().addWalletEntry(WalletEntry(
           id: newId('wal'),
@@ -218,7 +221,15 @@ class _WalletFormState extends State<_WalletForm> {
             const SizedBox(height: 12),
             TextFormField(controller: _purpose, decoration: const InputDecoration(labelText: 'Purpose (optional)')),
             const SizedBox(height: 16),
-            FilledButton(onPressed: _submit, child: const Text('Save')),
+            FilledButton(
+              onPressed: _saving ? null : _submit,
+              child: _saving
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Text('Save'),
+            ),
           ],
         ),
       ),
