@@ -20,8 +20,11 @@ class AuthService {
     drive.DriveApi.driveFileScope,
   ];
 
+  // The web plugin mutates the scopes list internally, so every call gets a
+  // fresh growable copy — passing the `const` list directly throws
+  // "Cannot remove from an unmodifiable list".
   final GoogleSignIn _googleSignIn = GoogleSignIn(
-    scopes: _scopes,
+    scopes: List<String>.of(_scopes),
     serverClientId: _serverClientId.isEmpty ? null : _serverClientId,
   );
 
@@ -36,7 +39,7 @@ class AuthService {
     // the scope silently, report "signed out" so the user can grant it via the
     // sign-in button rather than failing with a "no authenticated client" error.
     if (kIsWeb && _account != null) {
-      final canAccess = await _googleSignIn.canAccessScopes(_scopes);
+      final canAccess = await _googleSignIn.canAccessScopes(List<String>.of(_scopes));
       if (!canAccess) _account = null;
     }
     return _account;
@@ -50,7 +53,7 @@ class AuthService {
     // `authenticatedClient()` returns null. (No-op on mobile, where the scopes
     // are granted as part of sign-in.)
     if (kIsWeb && _account != null) {
-      final granted = await _googleSignIn.requestScopes(_scopes);
+      final granted = await _googleSignIn.requestScopes(List<String>.of(_scopes));
       if (!granted) _account = null;
     }
     return _account;
