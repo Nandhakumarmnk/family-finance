@@ -5,6 +5,7 @@ import 'screens/home_shell.dart';
 import 'screens/login_screen.dart';
 import 'state/app_state.dart';
 import 'theme.dart';
+import 'widgets/feedback.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -21,6 +22,7 @@ class FamilyFinanceApp extends StatelessWidget {
       child: MaterialApp(
         title: 'Family Finance',
         debugShowCheckedModeBanner: false,
+        navigatorKey: rootNavigatorKey,
         theme: AppTheme.light(),
         darkTheme: AppTheme.dark(),
         home: const _Root(),

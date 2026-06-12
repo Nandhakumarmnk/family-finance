@@ -12,6 +12,7 @@ import '../models/wallet_entry.dart';
 import '../services/auth_service.dart';
 import '../services/backend_service.dart';
 import '../services/drive_service.dart';
+import '../widgets/feedback.dart';
 import '../services/finance_repository.dart';
 
 enum AppStatus { initializing, signedOut, signedIn, error }
@@ -173,6 +174,7 @@ class AppState extends ChangeNotifier {
         id: s.id, date: s.date, type: 'income', category: s.source, amount: s.amount, notes: s.notes);
     if (shared) await _persistFamily();
     await _persistPersonal();
+    _celebrate('Income added');
   }
 
   Future<void> deleteSalary(String id) async {
@@ -209,6 +211,7 @@ class AppState extends ChangeNotifier {
     }
     if (familyChanged) await _persistFamily();
     await _persistPersonal();
+    _celebrate('Expense added');
   }
 
   Future<void> deleteExpense(String id) async {
@@ -228,6 +231,7 @@ class AppState extends ChangeNotifier {
     _personal!.emis.add(emi);
     _logActivity('Added', 'EMI', emi.name, emi.monthlyAmount);
     await _persistPersonal();
+    _celebrate('EMI added');
   }
 
   Future<void> recordEmiPayment(String id) async {
@@ -248,6 +252,7 @@ class AppState extends ChangeNotifier {
           emi.monthlyAmount);
     }
     await _persistPersonal();
+    _celebrate('Payment recorded');
   }
 
   Future<void> deleteEmi(String id) async {
@@ -268,6 +273,7 @@ class AppState extends ChangeNotifier {
     _logActivity('Updated', 'Target', 'Target for ${t.month}/${t.year}',
         t.savingsTarget);
     await _persistPersonal();
+    _celebrate('Target saved');
   }
 
   Target? targetFor(int year, int month) {
@@ -369,6 +375,9 @@ class AppState extends ChangeNotifier {
         '$kind${e.purpose.isEmpty ? '' : ' — ${e.purpose}'}', e.amount);
     await _persistFamily();
     await _persistPersonal();
+    _celebrate(e.direction == WalletDirection.topUp
+        ? 'Wallet topped up'
+        : 'Wallet spend recorded');
   }
 
   Future<void> deleteWalletEntry(String id) async {
@@ -516,8 +525,19 @@ class AppState extends ChangeNotifier {
     return _family!.ledger.length != before;
   }
 
+  /// Show a success popup after a mutation, or a soft error if the Drive save
+  /// failed (the change is still kept locally).
+  void _celebrate(String successMessage) {
+    if (error == null) {
+      AppFeedback.success(successMessage);
+    } else {
+      AppFeedback.error('Saved on device — Drive sync failed');
+    }
+  }
+
   // --- internals -------------------------------------------------------------
   Future<void> _persistPersonal() async {
+    error = null;
     notifyListeners(); // optimistic UI update
     _setBusy(true);
     try {
@@ -530,6 +550,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _persistFamily() async {
+    error = null;
     notifyListeners();
     _setBusy(true);
     try {
