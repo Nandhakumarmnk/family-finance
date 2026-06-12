@@ -396,6 +396,25 @@ class AppState extends ChangeNotifier {
     await _persistPersonal();
   }
 
+  /// A link to open the personal workbook (.xlsx) in Google Drive / Sheets.
+  Future<String?> personalFileLink() async {
+    final id = _personal?.fileId;
+    if (id == null || id.isEmpty || _repo == null) return null;
+    return _repo!.fileWebLink(id);
+  }
+
+  /// Income/expense for an arbitrary date range (inclusive) — used by the
+  /// PDF statement export.
+  List<Expense> expensesBetween(DateTime start, DateTime end) => expenses
+      .where((e) => !e.date.isBefore(start) && !e.date.isAfter(end))
+      .toList()
+    ..sort((a, b) => a.date.compareTo(b.date));
+
+  List<Salary> salariesBetween(DateTime start, DateTime end) => salaries
+      .where((s) => !s.date.isBefore(start) && !s.date.isAfter(end))
+      .toList()
+    ..sort((a, b) => a.date.compareTo(b.date));
+
   // --- period selection ------------------------------------------------------
   void selectPeriod({int? year, int? month}) {
     if (year != null) selectedYear = year;

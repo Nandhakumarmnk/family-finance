@@ -207,6 +207,9 @@ class FinanceRepository {
     final folderId = await _drive.ensureAppFolder();
     return _drive.upsertXlsx(name, bytes, parentId: folderId);
   }
+
+  /// A web link to open a stored file (e.g. the personal workbook in Sheets).
+  Future<String?> fileWebLink(String fileId) => _drive.webLink(fileId);
 }
 
 /// In-memory contents of the personal workbook.

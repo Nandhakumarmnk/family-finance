@@ -7,6 +7,7 @@ import 'activity_screen.dart';
 import 'add_details_screen.dart';
 import 'appearance_screen.dart';
 import 'dashboard_screen.dart';
+import 'reports_export_screen.dart';
 import 'emi_screen.dart';
 import 'expenses_screen.dart';
 import 'family_wallet_screen.dart';
@@ -63,6 +64,7 @@ class _HomeShellState extends State<HomeShell> {
               const PopupMenuItem(value: 'details', child: _MenuRow(Icons.person, 'My Details')),
               const PopupMenuItem(value: 'salary', child: _MenuRow(Icons.payments, 'Salary / Income')),
               const PopupMenuItem(value: 'activity', child: _MenuRow(Icons.history, 'Activity & changes')),
+              const PopupMenuItem(value: 'export', child: _MenuRow(Icons.picture_as_pdf_outlined, 'Reports & export')),
               const PopupMenuItem(value: 'appearance', child: _MenuRow(Icons.palette_outlined, 'Appearance')),
               if (BackendService.isConfigured)
                 const PopupMenuItem(value: 'report', child: _MenuRow(Icons.mark_email_read_outlined, 'Email me a report')),
@@ -114,6 +116,9 @@ class _HomeShellState extends State<HomeShell> {
         break;
       case 'appearance':
         _push(context, const AppearanceScreen());
+        break;
+      case 'export':
+        _push(context, const ReportsExportScreen());
         break;
       case 'report':
         _emailReport(context);
