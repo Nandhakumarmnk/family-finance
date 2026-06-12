@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../models/activity.dart';
 import '../models/emi.dart';
 import '../models/expense.dart';
 import '../models/member.dart';
@@ -50,6 +51,7 @@ class AppState extends ChangeNotifier {
   List<Target> get targets => _personal?.targets ?? const [];
   List<Member> get members => _family?.members ?? const [];
   List<WalletEntry> get wallet => _family?.wallet ?? const [];
+  List<Activity> get activities => _personal?.activities ?? const [];
   double get walletBalance => _family?.walletBalance ?? 0;
 
   // --- lifecycle -------------------------------------------------------------
@@ -148,17 +150,26 @@ class AppState extends ChangeNotifier {
   // --- salary ----------------------------------------------------------------
   Future<void> addSalary(Salary s) async {
     _personal!.salaries.add(s);
+    _logActivity('Added', 'Income', s.source, s.amount);
     await _persistPersonal();
   }
 
   Future<void> deleteSalary(String id) async {
-    _personal!.salaries.removeWhere((e) => e.id == id);
+    final list = _personal!.salaries;
+    final idx = list.indexWhere((e) => e.id == id);
+    if (idx >= 0) {
+      final s = list[idx];
+      list.removeAt(idx);
+      _logActivity('Deleted', 'Income', s.source, s.amount);
+    }
     await _persistPersonal();
   }
 
   // --- expenses --------------------------------------------------------------
   Future<void> addExpense(Expense e) async {
     _personal!.expenses.add(e);
+    _logActivity('Added', 'Expense',
+        '${e.category}${e.notes.isEmpty ? '' : ' — ${e.notes}'}', e.amount);
     // An expense paid from the family wallet also records a wallet "spend".
     if (e.fromFamilyWallet && _family != null) {
       _family!.wallet.add(WalletEntry(
@@ -176,13 +187,20 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> deleteExpense(String id) async {
-    _personal!.expenses.removeWhere((e) => e.id == id);
+    final list = _personal!.expenses;
+    final idx = list.indexWhere((e) => e.id == id);
+    if (idx >= 0) {
+      final e = list[idx];
+      list.removeAt(idx);
+      _logActivity('Deleted', 'Expense', e.category, e.amount);
+    }
     await _persistPersonal();
   }
 
   // --- EMIs ------------------------------------------------------------------
   Future<void> addEmi(Emi emi) async {
     _personal!.emis.add(emi);
+    _logActivity('Added', 'EMI', emi.name, emi.monthlyAmount);
     await _persistPersonal();
   }
 
@@ -199,12 +217,21 @@ class AppState extends ChangeNotifier {
         paymentMode: 'Bank',
         notes: '${emi.name} instalment ${emi.paidMonths}/${emi.totalMonths}',
       ));
+      _logActivity('Paid', 'EMI payment',
+          '${emi.name} instalment ${emi.paidMonths}/${emi.totalMonths}',
+          emi.monthlyAmount);
     }
     await _persistPersonal();
   }
 
   Future<void> deleteEmi(String id) async {
-    _personal!.emis.removeWhere((e) => e.id == id);
+    final list = _personal!.emis;
+    final idx = list.indexWhere((e) => e.id == id);
+    if (idx >= 0) {
+      final emi = list[idx];
+      list.removeAt(idx);
+      _logActivity('Deleted', 'EMI', emi.name, emi.monthlyAmount);
+    }
     await _persistPersonal();
   }
 
@@ -212,6 +239,8 @@ class AppState extends ChangeNotifier {
   Future<void> setTarget(Target t) async {
     _personal!.targets.removeWhere((e) => e.year == t.year && e.month == t.month);
     _personal!.targets.add(t);
+    _logActivity('Updated', 'Target', 'Target for ${t.month}/${t.year}',
+        t.savingsTarget);
     await _persistPersonal();
   }
 
@@ -260,12 +289,24 @@ class AppState extends ChangeNotifier {
   // --- common wallet ---------------------------------------------------------
   Future<void> addWalletEntry(WalletEntry e) async {
     _family!.wallet.add(e);
+    final kind = e.direction == WalletDirection.topUp ? 'Top-up' : 'Spend';
+    _logActivity('Added', 'Wallet',
+        '$kind${e.purpose.isEmpty ? '' : ' — ${e.purpose}'}', e.amount);
     await _persistFamily();
+    await _persistPersonal();
   }
 
   Future<void> deleteWalletEntry(String id) async {
-    _family!.wallet.removeWhere((e) => e.id == id);
+    final list = _family!.wallet;
+    final idx = list.indexWhere((e) => e.id == id);
+    if (idx >= 0) {
+      final e = list[idx];
+      list.removeAt(idx);
+      final kind = e.direction == WalletDirection.topUp ? 'Top-up' : 'Spend';
+      _logActivity('Deleted', 'Wallet', kind, e.amount);
+    }
     await _persistFamily();
+    await _persistPersonal();
   }
 
   // --- period selection ------------------------------------------------------
@@ -341,6 +382,30 @@ class AppState extends ChangeNotifier {
   double get totalEmiRemaining =>
       emis.fold(0.0, (a, e) => a + e.amountRemaining);
   int get activeEmiCount => emis.where((e) => !e.isClosed).length;
+
+  // --- activity log ----------------------------------------------------------
+  /// Append an audit entry for a payment change. Newest first; capped so the
+  /// workbook stays small. Caller persists afterwards.
+  void _logActivity(String action, String type, String description,
+      [double amount = 0]) {
+    if (_personal == null) return;
+    _personal!.activities.insert(
+      0,
+      Activity(
+        id: 'a_${DateTime.now().microsecondsSinceEpoch}',
+        timestamp: DateTime.now(),
+        userEmail: _personal!.profile.email,
+        action: action,
+        type: type,
+        description: description,
+        amount: amount,
+      ),
+    );
+    const maxEntries = 1000;
+    if (_personal!.activities.length > maxEntries) {
+      _personal!.activities.removeRange(maxEntries, _personal!.activities.length);
+    }
+  }
 
   // --- internals -------------------------------------------------------------
   Future<void> _persistPersonal() async {

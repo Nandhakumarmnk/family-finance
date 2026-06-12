@@ -26,6 +26,18 @@ class Fmt {
   }
 
   static String date(DateTime d) => DateFormat.yMMMd().format(d);
+  static String time(DateTime d) => DateFormat.jm().format(d);
+
+  /// "Today" / "Yesterday" / "12 Jun 2026" for grouping activity by day.
+  static String dayLabel(DateTime d) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final that = DateTime(d.year, d.month, d.day);
+    final diff = today.difference(that).inDays;
+    if (diff == 0) return 'Today';
+    if (diff == 1) return 'Yesterday';
+    return DateFormat.yMMMEd().format(d);
+  }
   static String monthYear(int year, int month) =>
       DateFormat.yMMMM().format(DateTime(year, month));
   static String monthShort(int month) =>

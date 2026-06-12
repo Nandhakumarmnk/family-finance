@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import '../models/activity.dart';
 import '../models/emi.dart';
 import '../models/expense.dart';
 import '../models/member.dart';
@@ -38,6 +39,7 @@ class FinanceRepository {
   static const _sTargets = 'Targets';
   static const _sMembers = 'Members';
   static const _sWallet = 'Wallet';
+  static const _sActivity = 'Activity';
 
   String _personalFileName(String email) =>
       'personal_${_sanitize(email)}.xlsx';
@@ -65,6 +67,7 @@ class FinanceRepository {
         expenses: [],
         emis: [],
         targets: [],
+        activities: [],
       );
       data.fileId = await _savePersonal(data, folderId: folderId, name: name);
       return data;
@@ -98,6 +101,8 @@ class FinanceRepository {
           ExcelCodec.dataRows(wb, _sExpenses).map(Expense.fromRow).toList(),
       emis: ExcelCodec.dataRows(wb, _sEmis).map(Emi.fromRow).toList(),
       targets: ExcelCodec.dataRows(wb, _sTargets).map(Target.fromRow).toList(),
+      activities:
+          ExcelCodec.dataRows(wb, _sActivity).map(Activity.fromRow).toList(),
     );
   }
 
@@ -118,6 +123,7 @@ class FinanceRepository {
       _sExpenses: [Expense.header, ...data.expenses.map((e) => e.toRow())],
       _sEmis: [Emi.header, ...data.emis.map((e) => e.toRow())],
       _sTargets: [Target.header, ...data.targets.map((e) => e.toRow())],
+      _sActivity: [Activity.header, ...data.activities.map((e) => e.toRow())],
     };
     final bytes = ExcelCodec.encode(sheets);
     return _drive.upsertXlsx(name, bytes, parentId: folderId);
@@ -201,6 +207,7 @@ class PersonalData {
   final List<Expense> expenses;
   final List<Emi> emis;
   final List<Target> targets;
+  final List<Activity> activities;
 
   PersonalData({
     required this.fileId,
@@ -209,6 +216,7 @@ class PersonalData {
     required this.expenses,
     required this.emis,
     required this.targets,
+    required this.activities,
   });
 }
 

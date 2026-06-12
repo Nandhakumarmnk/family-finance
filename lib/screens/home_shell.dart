@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../state/app_state.dart';
+import 'activity_screen.dart';
 import 'add_details_screen.dart';
 import 'dashboard_screen.dart';
 import 'emi_screen.dart';
@@ -59,6 +60,7 @@ class _HomeShellState extends State<HomeShell> {
             itemBuilder: (_) => const [
               PopupMenuItem(value: 'details', child: _MenuRow(Icons.person, 'My Details')),
               PopupMenuItem(value: 'salary', child: _MenuRow(Icons.payments, 'Salary / Income')),
+              PopupMenuItem(value: 'activity', child: _MenuRow(Icons.history, 'Activity & changes')),
               PopupMenuItem(value: 'master', child: _MenuRow(Icons.groups, 'Users / Master')),
               PopupMenuDivider(),
               PopupMenuItem(value: 'signout', child: _MenuRow(Icons.logout, 'Sign out')),
@@ -101,6 +103,9 @@ class _HomeShellState extends State<HomeShell> {
         break;
       case 'salary':
         _push(context, const SalaryScreen());
+        break;
+      case 'activity':
+        _push(context, const ActivityScreen());
         break;
       case 'master':
         _push(context, const MasterScreen());
