@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'screens/home_shell.dart';
 import 'screens/login_screen.dart';
 import 'state/app_state.dart';
+import 'state/theme_controller.dart';
 import 'theme.dart';
 import 'widgets/feedback.dart';
 
@@ -17,15 +18,21 @@ class FamilyFinanceApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (_) => AppState()..init(),
-      child: MaterialApp(
-        title: 'Family Finance',
-        debugShowCheckedModeBanner: false,
-        navigatorKey: rootNavigatorKey,
-        theme: AppTheme.light(),
-        darkTheme: AppTheme.dark(),
-        home: const _Root(),
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => AppState()..init()),
+        ChangeNotifierProvider(create: (_) => ThemeController()),
+      ],
+      child: Consumer<ThemeController>(
+        builder: (_, theme, __) => MaterialApp(
+          title: 'Family Finance',
+          debugShowCheckedModeBanner: false,
+          navigatorKey: rootNavigatorKey,
+          themeMode: theme.mode,
+          theme: AppTheme.light(seed: theme.seed),
+          darkTheme: AppTheme.dark(seed: theme.seed),
+          home: const _Root(),
+        ),
       ),
     );
   }

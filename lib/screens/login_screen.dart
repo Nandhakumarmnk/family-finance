@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../state/app_state.dart';
-import '../theme.dart';
 
 class LoginScreen extends StatelessWidget {
   const LoginScreen({super.key});
@@ -20,8 +19,8 @@ class LoginScreen extends StatelessWidget {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              AppTheme.seed,
-              Color.lerp(AppTheme.seed, Colors.black, 0.45)!,
+              scheme.primary,
+              Color.lerp(scheme.primary, Colors.black, 0.45)!,
             ],
           ),
         ),

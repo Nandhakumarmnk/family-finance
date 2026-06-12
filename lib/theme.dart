@@ -8,23 +8,35 @@ import 'package:flutter/services.dart';
 class AppTheme {
   AppTheme._();
 
-  static const Color seed = Color(0xFF13726B); // deep teal
-  static const Color _accent = Color(0xFFE8A33D); // warm amber accent
+  static const Color seed = Color(0xFF13726B); // deep teal (default)
 
   // Semantic finance colours (used by widgets for income/expense/positive/etc).
   static const Color positive = Color(0xFF1E8E5A);
   static const Color negative = Color(0xFFD0463B);
 
-  static ThemeData light() => _build(Brightness.light);
-  static ThemeData dark() => _build(Brightness.dark);
+  /// Selectable colour themes shown in the Appearance settings.
+  static const List<({String name, Color color})> palettes = [
+    (name: 'Teal', color: Color(0xFF13726B)),
+    (name: 'Indigo', color: Color(0xFF3F51B5)),
+    (name: 'Emerald', color: Color(0xFF1E8E5A)),
+    (name: 'Violet', color: Color(0xFF6A4CC0)),
+    (name: 'Blue', color: Color(0xFF2563EB)),
+    (name: 'Amber', color: Color(0xFFB8772A)),
+    (name: 'Rose', color: Color(0xFFB23A6B)),
+    (name: 'Slate', color: Color(0xFF42566B)),
+  ];
 
-  static ThemeData _build(Brightness brightness) {
+  static ThemeData light({Color seed = AppTheme.seed}) =>
+      _build(Brightness.light, seed);
+  static ThemeData dark({Color seed = AppTheme.seed}) =>
+      _build(Brightness.dark, seed);
+
+  static ThemeData _build(Brightness brightness, Color seedColor) {
     final bool isDark = brightness == Brightness.dark;
 
     final ColorScheme scheme = ColorScheme.fromSeed(
-      seedColor: seed,
+      seedColor: seedColor,
       brightness: brightness,
-      secondary: _accent,
     );
 
     final Color scaffold =

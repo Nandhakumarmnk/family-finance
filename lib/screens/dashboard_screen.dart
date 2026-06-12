@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../state/app_state.dart';
-import '../theme.dart';
 import '../utils/format.dart';
 import '../widgets/common.dart';
 
@@ -129,8 +128,8 @@ class DashboardScreen extends StatelessWidget {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            AppTheme.seed,
-            Color.lerp(AppTheme.seed, Colors.black, 0.4)!,
+            theme.colorScheme.primary,
+            Color.lerp(theme.colorScheme.primary, Colors.black, 0.4)!,
           ],
         ),
       ),
