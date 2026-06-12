@@ -54,18 +54,25 @@ class DriveService {
       });
 
   /// Find a file id by name within [parentId]. Returns null if not present.
-  Future<String?> findFile(String name, {required String parentId}) =>
-      _run('findFile', () async {
-        final res = await _api.files.list(
-          q: "name='$name' and '$parentId' in parents and trashed=false",
-          $fields: 'files(id,name,modifiedTime)',
-          spaces: 'drive',
-        );
-        if (res.files != null && res.files!.isNotEmpty) {
-          return res.files!.first.id;
-        }
-        return null;
-      });
+  Future<String?> findFile(String name, {required String parentId}) {
+    final escapedName = name.replaceAll("'", r"\'");
+    // If we somehow have no parent id, search by name alone rather than
+    // sending an empty-id clause (which Drive rejects as an invalid query).
+    final q = parentId.isEmpty
+        ? "name='$escapedName' and trashed=false"
+        : "name='$escapedName' and '$parentId' in parents and trashed=false";
+    return _run('findFile q=[$q]', () async {
+      final res = await _api.files.list(
+        q: q,
+        $fields: 'files(id,name,modifiedTime)',
+        spaces: 'drive',
+      );
+      if (res.files != null && res.files!.isNotEmpty) {
+        return res.files!.first.id;
+      }
+      return null;
+    });
+  }
 
   /// Download a file's raw bytes by id.
   Future<Uint8List> downloadBytes(String fileId) =>
@@ -92,9 +99,10 @@ class DriveService {
         if (bytes.isEmpty) {
           throw Exception('refusing to upload an empty workbook');
         }
-        final meta = drive.File()
-          ..name = name
-          ..parents = [parentId];
+        final meta = drive.File()..name = name;
+        // Only set a parent when we actually have one — an empty/invalid id is
+        // rejected by Drive as an invalid value.
+        if (parentId.isNotEmpty) meta.parents = [parentId];
 
         final media = drive.Media(
           Stream.value(bytes),
