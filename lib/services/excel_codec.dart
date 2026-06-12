@@ -14,19 +14,23 @@ class ExcelCodec {
   /// sheet is expected to be the header. Returns encoded bytes.
   static Uint8List encode(Map<String, List<List<dynamic>>> sheets) {
     final excel = Excel.createExcel();
-    final defaultSheet = excel.getDefaultSheet();
 
     sheets.forEach((name, rows) {
       final sheet = excel[name];
       for (final row in rows) {
-        sheet.appendRow(row);
+        // appendRow only reads the row, but pass a growable copy to be safe
+        // against const rows (e.g. the model `header` lists).
+        sheet.appendRow(List<dynamic>.of(row));
       }
     });
 
-    // Remove the auto-created default sheet if we didn't use it.
-    if (defaultSheet != null && !sheets.containsKey(defaultSheet)) {
-      excel.delete(defaultSheet);
-    }
+    // NOTE: we deliberately do NOT call excel.delete() to drop the auto-created
+    // "Sheet1". On web (dart2js) excel.delete() does a removeWhere on internal
+    // XML node lists that are unmodifiable, throwing "Cannot remove from an
+    // unmodifiable list" — and because it mutates some internal state before
+    // throwing, even catching it can leave the workbook inconsistent. A
+    // leftover empty default sheet is harmless: every reader looks sheets up by
+    // name, so the stray sheet is simply ignored.
 
     final encoded = excel.encode();
     return Uint8List.fromList(encoded ?? <int>[]);
