@@ -3,7 +3,9 @@ import 'package:provider/provider.dart';
 
 import 'screens/home_shell.dart';
 import 'screens/login_screen.dart';
+import 'screens/pin_screen.dart';
 import 'state/app_state.dart';
+import 'state/pin_controller.dart';
 import 'state/theme_controller.dart';
 import 'theme.dart';
 import 'widgets/feedback.dart';
@@ -22,6 +24,7 @@ class FamilyFinanceApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => AppState()..init()),
         ChangeNotifierProvider(create: (_) => ThemeController()),
+        ChangeNotifierProvider(create: (_) => PinController()),
       ],
       child: Consumer<ThemeController>(
         builder: (_, theme, __) => MaterialApp(
@@ -52,6 +55,9 @@ class _Root extends StatelessWidget {
       case AppStatus.error:
         return const LoginScreen();
       case AppStatus.signedIn:
+        final pin = context.watch<PinController>();
+        if (!pin.loaded) return const _Splash();
+        if (pin.isLocked) return const PinLockScreen();
         return const HomeShell();
     }
   }

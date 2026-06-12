@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../state/pin_controller.dart';
 import '../state/theme_controller.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import 'pin_screen.dart';
 
 /// Appearance settings — light/dark/system mode and the colour theme.
 class AppearanceScreen extends StatelessWidget {
@@ -12,13 +14,35 @@ class AppearanceScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tc = context.watch<ThemeController>();
+    final pin = context.watch<PinController>();
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Appearance')),
+      appBar: AppBar(title: const Text('Appearance & security')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          const SectionHeader('App lock'),
+          Card(
+            child: SwitchListTile(
+              secondary: const Icon(Icons.pin_outlined),
+              title: const Text('PIN lock'),
+              subtitle: Text(pin.isSet
+                  ? 'Unlock with a 4-digit PIN — no Google sign-in each time'
+                  : 'Set a 4-digit PIN to unlock the app quickly'),
+              value: pin.isSet,
+              onChanged: (on) async {
+                if (on) {
+                  await Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const SetPinScreen()),
+                  );
+                } else {
+                  await pin.removePin();
+                }
+              },
+            ),
+          ),
+          const SizedBox(height: 8),
           const SectionHeader('Mode'),
           Card(
             child: Padding(
