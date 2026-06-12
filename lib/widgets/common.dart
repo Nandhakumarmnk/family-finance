@@ -67,27 +67,44 @@ class StatCard extends StatelessWidget {
             Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(8),
+                  padding: const EdgeInsets.all(9),
                   decoration: BoxDecoration(
-                    color: c.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(10),
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [c.withOpacity(0.20), c.withOpacity(0.10)],
+                    ),
+                    borderRadius: BorderRadius.circular(12),
                   ),
                   child: Icon(icon, color: c, size: 20),
                 ),
                 const Spacer(),
               ],
             ),
-            const SizedBox(height: 12),
-            Text(value,
-                style: theme.textTheme.titleLarge
-                    ?.copyWith(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 2),
-            Text(label,
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.outline)),
+            const SizedBox(height: 14),
+            Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.5,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              label,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
             if (sub != null) ...[
-              const SizedBox(height: 2),
-              Text(sub!, style: theme.textTheme.labelSmall?.copyWith(color: c)),
+              const SizedBox(height: 6),
+              Text(sub!,
+                  style: theme.textTheme.labelSmall
+                      ?.copyWith(color: c, fontWeight: FontWeight.w600)),
             ]
           ],
         ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../state/app_state.dart';
+import '../theme.dart';
 import '../utils/format.dart';
 import '../widgets/common.dart';
 
@@ -119,26 +120,75 @@ class DashboardScreen extends StatelessWidget {
   Widget _greeting(BuildContext context, AppState s) {
     final theme = Theme.of(context);
     final name = (s.profile?.displayName ?? '').split(' ').first;
-    return Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Hello${name.isEmpty ? '' : ', $name'} 👋',
-                  style: theme.textTheme.titleLarge
-                      ?.copyWith(fontWeight: FontWeight.bold)),
-              Text(
-                s.inFamily
-                    ? 'Family: ${s.family?.familyName ?? s.profile?.familyName ?? ''}'
-                    : 'Personal account',
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.outline),
-              ),
-            ],
-          ),
+    final initial = (s.profile?.displayName ?? '?').trim();
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            AppTheme.seed,
+            Color.lerp(AppTheme.seed, Colors.black, 0.4)!,
+          ],
         ),
-      ],
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Hello${name.isEmpty ? '' : ', $name'} 👋',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    Icon(
+                      s.inFamily ? Icons.family_restroom : Icons.person_outline,
+                      size: 14,
+                      color: Colors.white.withOpacity(0.8),
+                    ),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        s.inFamily
+                            ? (s.family?.familyName ??
+                                s.profile?.familyName ??
+                                'Family')
+                            : 'Personal account',
+                        style: theme.textTheme.bodySmall
+                            ?.copyWith(color: Colors.white.withOpacity(0.85)),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          CircleAvatar(
+            radius: 24,
+            backgroundColor: Colors.white.withOpacity(0.18),
+            backgroundImage: (s.profile?.photoUrl?.isNotEmpty ?? false)
+                ? NetworkImage(s.profile!.photoUrl!)
+                : null,
+            child: (s.profile?.photoUrl?.isNotEmpty ?? false)
+                ? null
+                : Text(
+                    initial.isEmpty ? '?' : initial[0].toUpperCase(),
+                    style: const TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.bold),
+                  ),
+          ),
+        ],
+      ),
     );
   }
 
