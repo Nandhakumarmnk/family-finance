@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:googleapis/drive/v3.dart' as drive;
@@ -15,81 +16,112 @@ class DriveService {
   static const String _xlsxMime =
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
-  /// Returns the id of the `FamilyFinance` folder, creating it if missing.
-  Future<String> ensureAppFolder() async {
-    final existing = await _api.files.list(
-      q: "name='$appFolderName' and "
-          "mimeType='application/vnd.google-apps.folder' and trashed=false",
-      $fields: 'files(id,name)',
-      spaces: 'drive',
-    );
-    if (existing.files != null && existing.files!.isNotEmpty) {
-      return existing.files!.first.id!;
+  /// Run a Drive API call, turning opaque `DetailedApiRequestError`s into a
+  /// message that names the operation and includes Google's full error JSON
+  /// (which spells out exactly which field/value it rejected).
+  Future<T> _run<T>(String op, Future<T> Function() fn) async {
+    try {
+      return await fn();
+    } catch (e) {
+      throw Exception('Drive.$op failed: ${_describe(e)}');
     }
-    final folder = drive.File()
-      ..name = appFolderName
-      ..mimeType = 'application/vnd.google-apps.folder';
-    final created = await _api.files.create(folder, $fields: 'id');
-    return created.id!;
   }
+
+  String _describe(Object e) {
+    try {
+      final json = (e as dynamic).jsonResponse;
+      if (json != null) return '$e | ${jsonEncode(json)}';
+    } catch (_) {}
+    return e.toString();
+  }
+
+  /// Returns the id of the `FamilyFinance` folder, creating it if missing.
+  Future<String> ensureAppFolder() => _run('ensureAppFolder', () async {
+        final existing = await _api.files.list(
+          q: "name='$appFolderName' and "
+              "mimeType='application/vnd.google-apps.folder' and trashed=false",
+          $fields: 'files(id,name)',
+          spaces: 'drive',
+        );
+        if (existing.files != null && existing.files!.isNotEmpty) {
+          return existing.files!.first.id!;
+        }
+        final folder = drive.File()
+          ..name = appFolderName
+          ..mimeType = 'application/vnd.google-apps.folder';
+        final created = await _api.files.create(folder, $fields: 'id');
+        return created.id!;
+      });
 
   /// Find a file id by name within [parentId]. Returns null if not present.
-  Future<String?> findFile(String name, {required String parentId}) async {
-    final res = await _api.files.list(
-      q: "name='$name' and '$parentId' in parents and trashed=false",
-      $fields: 'files(id,name,modifiedTime)',
-      spaces: 'drive',
-    );
-    if (res.files != null && res.files!.isNotEmpty) {
-      return res.files!.first.id;
-    }
-    return null;
-  }
+  Future<String?> findFile(String name, {required String parentId}) =>
+      _run('findFile', () async {
+        final res = await _api.files.list(
+          q: "name='$name' and '$parentId' in parents and trashed=false",
+          $fields: 'files(id,name,modifiedTime)',
+          spaces: 'drive',
+        );
+        if (res.files != null && res.files!.isNotEmpty) {
+          return res.files!.first.id;
+        }
+        return null;
+      });
 
   /// Download a file's raw bytes by id.
-  Future<Uint8List> downloadBytes(String fileId) async {
-    final media = await _api.files.get(
-      fileId,
-      downloadOptions: drive.DownloadOptions.fullMedia,
-    ) as drive.Media;
+  Future<Uint8List> downloadBytes(String fileId) =>
+      _run('downloadBytes', () async {
+        final media = await _api.files.get(
+          fileId,
+          downloadOptions: drive.DownloadOptions.fullMedia,
+        ) as drive.Media;
 
-    final out = <int>[];
-    await for (final chunk in media.stream) {
-      out.addAll(chunk);
-    }
-    return Uint8List.fromList(out);
-  }
+        final out = <int>[];
+        await for (final chunk in media.stream) {
+          out.addAll(chunk);
+        }
+        return Uint8List.fromList(out);
+      });
 
   /// Create a new .xlsx file with [bytes], returning its id.
   Future<String> createXlsx(
     String name,
     List<int> bytes, {
     required String parentId,
-  }) async {
-    final meta = drive.File()
-      ..name = name
-      ..parents = [parentId]
-      ..mimeType = _xlsxMime;
+  }) =>
+      _run('createXlsx', () async {
+        if (bytes.isEmpty) {
+          throw Exception('refusing to upload an empty workbook');
+        }
+        final meta = drive.File()
+          ..name = name
+          ..parents = [parentId];
 
-    final media = drive.Media(
-      Stream.value(bytes),
-      bytes.length,
-      contentType: _xlsxMime,
-    );
-    final created =
-        await _api.files.create(meta, uploadMedia: media, $fields: 'id');
-    return created.id!;
-  }
+        final media = drive.Media(
+          Stream.value(bytes),
+          bytes.length,
+          contentType: _xlsxMime,
+        );
+        final created = await _api.files.create(
+          meta,
+          uploadMedia: media,
+          $fields: 'id',
+        );
+        return created.id!;
+      });
 
   /// Overwrite an existing file's content with [bytes].
-  Future<void> updateXlsx(String fileId, List<int> bytes) async {
-    final media = drive.Media(
-      Stream.value(bytes),
-      bytes.length,
-      contentType: _xlsxMime,
-    );
-    await _api.files.update(drive.File(), fileId, uploadMedia: media);
-  }
+  Future<void> updateXlsx(String fileId, List<int> bytes) =>
+      _run('updateXlsx', () async {
+        if (bytes.isEmpty) {
+          throw Exception('refusing to upload an empty workbook');
+        }
+        final media = drive.Media(
+          Stream.value(bytes),
+          bytes.length,
+          contentType: _xlsxMime,
+        );
+        await _api.files.update(drive.File(), fileId, uploadMedia: media);
+      });
 
   /// Convenience: create the file if missing, otherwise overwrite it.
   /// Returns the file id.
@@ -112,21 +144,23 @@ class DriveService {
     String fileId,
     String email, {
     String role = 'writer',
-  }) async {
-    final permission = drive.Permission()
-      ..type = 'user'
-      ..role = role
-      ..emailAddress = email;
-    await _api.permissions.create(
-      permission,
-      fileId,
-      sendNotificationEmail: true,
-    );
-  }
+  }) =>
+      _run('shareWith', () async {
+        final permission = drive.Permission()
+          ..type = 'user'
+          ..role = role
+          ..emailAddress = email;
+        await _api.permissions.create(
+          permission,
+          fileId,
+          sendNotificationEmail: true,
+        );
+      });
 
   /// A short, shareable link the user can copy to invite family members.
-  Future<String?> webLink(String fileId) async {
-    final f = await _api.files.get(fileId, $fields: 'webViewLink') as drive.File;
-    return f.webViewLink;
-  }
+  Future<String?> webLink(String fileId) => _run('webLink', () async {
+        final f =
+            await _api.files.get(fileId, $fields: 'webViewLink') as drive.File;
+        return f.webViewLink;
+      });
 }
