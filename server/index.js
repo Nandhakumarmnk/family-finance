@@ -5,7 +5,12 @@ const { Firestore } = require('@google-cloud/firestore');
 const { google } = require('googleapis');
 const { OAuth2Client } = require('google-auth-library');
 
-const { buildSnapshot, renderHtml } = require('./lib/report');
+const {
+  buildSnapshot,
+  renderHtml,
+  buildFamilySnapshot,
+  renderFamilyHtml,
+} = require('./lib/report');
 
 const db = new Firestore();
 const SUBSCRIBERS = 'subscribers';
@@ -40,7 +45,7 @@ functions.http('linkUser', async (req, res) => {
   if (req.method !== 'POST') return res.status(405).send('POST only');
 
   try {
-    const { serverAuthCode } = req.body || {};
+    const { serverAuthCode, familyId = '', role = 'member' } = req.body || {};
     if (!serverAuthCode) return res.status(400).json({ error: 'serverAuthCode required' });
 
     const client = oauthClient();
@@ -61,12 +66,17 @@ functions.http('linkUser', async (req, res) => {
           hint: 'Remove app access at myaccount.google.com/permissions and sign in again.',
         });
       }
+      // Keep the refresh token, but still refresh family/role metadata.
+      await db.collection(SUBSCRIBERS).doc(email).set(
+        { familyId, role, updatedAt: Firestore.Timestamp.now() }, { merge: true });
       return res.json({ ok: true, email, note: 'kept existing refresh token' });
     }
 
     await db.collection(SUBSCRIBERS).doc(email).set({
       email,
       refreshToken: tokens.refresh_token,
+      familyId,
+      role,
       enabled: true,
       updatedAt: Firestore.Timestamp.now(),
     }, { merge: true });
@@ -87,14 +97,26 @@ functions.http('sendDailyReports', async (req, res) => {
   try {
     const snap = await db.collection(SUBSCRIBERS).where('enabled', '==', true).get();
     for (const doc of snap.docs) {
-      const { email, refreshToken } = doc.data();
+      const { email, refreshToken, role, familyId } = doc.data();
       try {
         const client = oauthClient();
         client.setCredentials({ refresh_token: refreshToken });
-        const snapshot = await buildSnapshot(google, client, email);
-        if (!snapshot) { results.push({ email, status: 'no_data' }); continue; }
-        await sendEmail(email, `Your money snapshot — ${snapshot.period}`, renderHtml(snapshot));
-        results.push({ email, status: 'sent' });
+
+        // Every member gets their own personal snapshot.
+        const personal = await buildSnapshot(google, client, email);
+        if (personal) {
+          await sendEmail(email, `Your money snapshot — ${personal.period}`, renderHtml(personal));
+        }
+
+        // A parent additionally gets the consolidated family report.
+        if (role === 'parent' && familyId) {
+          const fam = await buildFamilySnapshot(google, client, familyId, personal?.currency || 'INR');
+          if (fam) {
+            await sendEmail(email, `Family snapshot — ${fam.period}`, renderFamilyHtml(fam));
+          }
+        }
+
+        results.push({ email, status: personal ? 'sent' : 'no_data', role });
       } catch (e) {
         console.error(`report failed for ${email}`, e);
         results.push({ email, status: 'error', error: String(e.message || e) });

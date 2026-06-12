@@ -148,6 +148,121 @@ async function buildSnapshot(google, auth, email) {
   };
 }
 
+/**
+ * Build a CONSOLIDATED family snapshot from the shared family workbook
+ * (FamilyLedger mirrored from every member + the shared Wallet). Used for the
+ * parent's daily report. `auth` must be a member who can read the family file.
+ */
+async function buildFamilySnapshot(google, auth, familyId, currency = 'INR') {
+  const drive = google.drive({ version: 'v3', auth });
+  const folderId = await findFileId(drive, APP_FOLDER, null);
+  if (!folderId) return null;
+  const famId = await findFileId(drive, `family_${familyId}.xlsx`, folderId);
+  if (!famId) return null;
+
+  const wb = await readWorkbook(drive, famId);
+  const ledger = wb['FamilyLedger'] || [];
+  const wallet = wb['Wallet'] || [];
+
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth() + 1;
+  const inMonth = (r) => num(r.year) === y && num(r.month) === m;
+
+  // Per-member income/expense for the month.
+  const perMember = {};
+  for (const r of ledger.filter(inMonth)) {
+    const key = String(r.memberName || r.memberEmail || 'Member');
+    perMember[key] = perMember[key] || { name: key, income: 0, expense: 0 };
+    if (String(r.type) === 'income') perMember[key].income += num(r.amount);
+    else perMember[key].expense += num(r.amount);
+  }
+  const members = Object.values(perMember)
+    .sort((a, b) => b.expense - a.expense);
+
+  const income = members.reduce((a, x) => a + x.income, 0);
+  const expense = members.reduce((a, x) => a + x.expense, 0);
+
+  // Category breakdown across the whole family.
+  const catMap = {};
+  for (const r of ledger.filter((r) => inMonth(r) && String(r.type) !== 'income')) {
+    const c = String(r.category || 'Other');
+    catMap[c] = (catMap[c] || 0) + num(r.amount);
+  }
+  const categories = Object.entries(catMap)
+    .map(([name, amount]) => ({ name, amount }))
+    .sort((a, b) => b.amount - a.amount);
+
+  const walletBalance = wallet.reduce(
+    (a, r) => a + (String(r.direction) === 'spend' ? -num(r.amount) : num(r.amount)), 0);
+
+  const since = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+  const recent = ledger
+    .map((r) => ({
+      ts: new Date(r.date || 0),
+      who: String(r.memberName || ''),
+      type: String(r.type || ''),
+      category: String(r.category || ''),
+      amount: num(r.amount),
+    }))
+    .filter((a) => a.ts >= since)
+    .sort((a, b) => b.ts - a.ts);
+
+  return {
+    currency,
+    period: now.toLocaleString('en-US', { month: 'long', year: 'numeric' }),
+    income, expense, savings: income - expense,
+    members, categories, walletBalance, recent,
+  };
+}
+
+/** Render the consolidated family snapshot as an HTML email. */
+function renderFamilyHtml(s) {
+  const c = s.currency;
+  const card = (inner) =>
+    `<div style="background:#fff;border:1px solid #e2e9e7;border-radius:16px;padding:18px;margin-top:16px">${inner}</div>`;
+
+  const memberRows = s.members.map((x) =>
+    `<tr><td style="padding:6px 0">${x.name}</td>
+     <td style="padding:6px 0;text-align:right;color:#1e8e5a">${money(x.income, c)}</td>
+     <td style="padding:6px 0;text-align:right;color:#d0463b">${money(x.expense, c)}</td></tr>`).join('') ||
+    '<tr><td style="padding:6px 0;color:#8a9b98">No member activity this month</td></tr>';
+
+  const cats = s.categories.slice(0, 8).map((x) =>
+    `<tr><td style="padding:6px 0">${x.name}</td><td style="padding:6px 0;text-align:right">${money(x.amount, c)}</td></tr>`).join('') ||
+    '<tr><td style="padding:6px 0;color:#8a9b98">No expenses yet this month</td></tr>';
+
+  const recent = s.recent.slice(0, 15).map((a) =>
+    `<tr><td style="padding:6px 0">${a.who} · ${a.type} · ${a.category}</td>
+     <td style="padding:6px 0;text-align:right">${money(a.amount, c)}</td></tr>`).join('') ||
+    '<tr><td style="padding:6px 0;color:#8a9b98">No changes since yesterday</td></tr>';
+
+  return `<!doctype html><html><body style="margin:0;background:#f4f7f6;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#0f1514">
+  <div style="max-width:560px;margin:0 auto;padding:24px">
+    <div style="background:linear-gradient(135deg,#13726b,#0a3f3b);border-radius:20px;padding:24px;color:#fff">
+      <div style="font-size:13px;opacity:.85">Family Finance · ${s.period}</div>
+      <div style="font-size:22px;font-weight:800;margin-top:4px">Family snapshot 👨‍👩‍👧</div>
+      <div style="font-size:13px;opacity:.9;margin-top:6px">Everyone's money, consolidated.</div>
+    </div>
+    ${card(`<table style="width:100%;border-collapse:collapse;font-size:14px">
+      <tr><td style="padding:8px 0;color:#5b6b69">Family income (month)</td><td style="padding:8px 0;text-align:right;font-weight:700;color:#1e8e5a">${money(s.income, c)}</td></tr>
+      <tr><td style="padding:8px 0;color:#5b6b69">Family expenses (month)</td><td style="padding:8px 0;text-align:right;font-weight:700;color:#d0463b">${money(s.expense, c)}</td></tr>
+      <tr><td style="padding:8px 0;color:#5b6b69">Net</td><td style="padding:8px 0;text-align:right;font-weight:700;color:${s.savings >= 0 ? '#1e8e5a' : '#d0463b'}">${money(s.savings, c)}</td></tr>
+      <tr><td style="padding:8px 0;color:#5b6b69">Family wallet</td><td style="padding:8px 0;text-align:right;font-weight:700;color:#3949ab">${money(s.walletBalance, c)}</td></tr>
+    </table>`)}
+    ${card(`<div style="font-weight:700;margin-bottom:6px">By member (this month)</div>
+      <table style="width:100%;border-collapse:collapse;font-size:14px">
+        <tr style="color:#8a9b98;font-size:12px"><td></td><td style="text-align:right">Income</td><td style="text-align:right">Spent</td></tr>
+        ${memberRows}
+      </table>`)}
+    ${card(`<div style="font-weight:700;margin-bottom:6px">Spending by category</div>
+      <table style="width:100%;border-collapse:collapse;font-size:14px">${cats}</table>`)}
+    ${card(`<div style="font-weight:700;margin-bottom:6px">Recent family changes</div>
+      <table style="width:100%;border-collapse:collapse;font-size:14px">${recent}</table>`)}
+    <div style="text-align:center;color:#8a9b98;font-size:12px;margin-top:18px">Sent by your Family Finance daily report.</div>
+  </div></body></html>`;
+}
+
 function money(v, currency) {
   try {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency }).format(v);
@@ -220,4 +335,10 @@ function renderHtml(s) {
   </div></body></html>`;
 }
 
-module.exports = { buildSnapshot, renderHtml, sanitizeEmail };
+module.exports = {
+  buildSnapshot,
+  renderHtml,
+  buildFamilySnapshot,
+  renderFamilyHtml,
+  sanitizeEmail,
+};

@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import '../models/activity.dart';
 import '../models/emi.dart';
 import '../models/expense.dart';
+import '../models/family_ledger.dart';
 import '../models/member.dart';
 import '../models/salary.dart';
 import '../models/target.dart';
@@ -40,6 +41,7 @@ class FinanceRepository {
   static const _sMembers = 'Members';
   static const _sWallet = 'Wallet';
   static const _sActivity = 'Activity';
+  static const _sFamilyLedger = 'FamilyLedger';
 
   String _personalFileName(String email) =>
       'personal_${_sanitize(email)}.xlsx';
@@ -150,6 +152,7 @@ class FinanceRepository {
         familyName: familyName,
         members: [creatorAsMember],
         wallet: [],
+        ledger: [],
       );
       data.fileId = await _saveFamily(data, folderId: folderId, name: name);
       return data;
@@ -164,6 +167,9 @@ class FinanceRepository {
       members: ExcelCodec.dataRows(wb, _sMembers).map(Member.fromRow).toList(),
       wallet:
           ExcelCodec.dataRows(wb, _sWallet).map(WalletEntry.fromRow).toList(),
+      ledger: ExcelCodec.dataRows(wb, _sFamilyLedger)
+          .map(FamilyLedgerEntry.fromRow)
+          .toList(),
     );
   }
 
@@ -181,6 +187,10 @@ class FinanceRepository {
     final sheets = <String, List<List<dynamic>>>{
       _sMembers: [Member.header, ...data.members.map((e) => e.toRow())],
       _sWallet: [WalletEntry.header, ...data.wallet.map((e) => e.toRow())],
+      _sFamilyLedger: [
+        FamilyLedgerEntry.header,
+        ...data.ledger.map((e) => e.toRow())
+      ],
     };
     final bytes = ExcelCodec.encode(sheets);
     return _drive.upsertXlsx(name, bytes, parentId: folderId);
@@ -227,6 +237,7 @@ class FamilyData {
   final String familyName;
   final List<Member> members;
   final List<WalletEntry> wallet;
+  final List<FamilyLedgerEntry> ledger;
 
   FamilyData({
     required this.fileId,
@@ -234,6 +245,7 @@ class FamilyData {
     required this.familyName,
     required this.members,
     required this.wallet,
+    required this.ledger,
   });
 
   double get walletBalance =>

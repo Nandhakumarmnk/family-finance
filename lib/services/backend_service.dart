@@ -11,9 +11,14 @@ class BackendService {
   static bool get isConfigured => _baseUrl.isNotEmpty;
 
   /// Hand the backend a one-time offline auth code so it can email a daily
-  /// report. Fire-and-forget: the daily email is a background nicety and must
-  /// never block or fail sign-in.
-  static Future<void> linkForDailyReport(String? serverAuthCode) async {
+  /// report, along with the household role so a "parent" can receive the
+  /// consolidated family report. Fire-and-forget: the daily email is a
+  /// background nicety and must never block or fail sign-in.
+  static Future<void> linkForDailyReport(
+    String? serverAuthCode, {
+    String familyId = '',
+    String role = 'member',
+  }) async {
     if (_baseUrl.isEmpty || serverAuthCode == null || serverAuthCode.isEmpty) {
       return;
     }
@@ -22,7 +27,11 @@ class BackendService {
           .post(
             Uri.parse(_baseUrl),
             headers: const {'Content-Type': 'application/json'},
-            body: jsonEncode({'serverAuthCode': serverAuthCode}),
+            body: jsonEncode({
+              'serverAuthCode': serverAuthCode,
+              'familyId': familyId,
+              'role': role,
+            }),
           )
           .timeout(const Duration(seconds: 15));
     } catch (_) {

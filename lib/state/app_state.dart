@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../models/activity.dart';
 import '../models/emi.dart';
 import '../models/expense.dart';
+import '../models/family_ledger.dart';
 import '../models/member.dart';
 import '../models/salary.dart';
 import '../models/target.dart';
@@ -99,9 +100,6 @@ class AppState extends ChangeNotifier {
 
   Future<void> _onSignedIn() async {
     final account = _auth.account!;
-    // Register with the daily-report backend (no-op unless one is configured).
-    // Fire-and-forget so it never blocks or breaks sign-in.
-    BackendService.linkForDailyReport(account.serverAuthCode);
     final client = await _auth.authenticatedClient();
     if (client == null) {
       throw StateError('Could not obtain an authenticated Google client.');
@@ -120,6 +118,22 @@ class AppState extends ChangeNotifier {
     }
     status = AppStatus.signedIn;
     notifyListeners();
+
+    // Register with the daily-report backend now that we know the household
+    // role (no-op unless a backend is configured). Fire-and-forget.
+    BackendService.linkForDailyReport(
+      account.serverAuthCode,
+      familyId: _personal?.profile.familyId ?? '',
+      role: _householdRole(),
+    );
+  }
+
+  /// 'parent' if this user is the family owner, otherwise 'member'.
+  String _householdRole() {
+    final email = _personal?.profile.email ?? '';
+    final me = members.where((m) => m.email == email);
+    if (me.isNotEmpty && me.first.role.toLowerCase() == 'owner') return 'parent';
+    return 'member';
   }
 
   Future<void> _loadFamily() async {
@@ -155,6 +169,9 @@ class AppState extends ChangeNotifier {
   Future<void> addSalary(Salary s) async {
     _personal!.salaries.add(s);
     _logActivity('Added', 'Income', s.source, s.amount);
+    final shared = _mirrorToFamily(
+        id: s.id, date: s.date, type: 'income', category: s.source, amount: s.amount, notes: s.notes);
+    if (shared) await _persistFamily();
     await _persistPersonal();
   }
 
@@ -166,6 +183,7 @@ class AppState extends ChangeNotifier {
       list.removeAt(idx);
       _logActivity('Deleted', 'Income', s.source, s.amount);
     }
+    if (_unmirrorFromFamily(id)) await _persistFamily();
     await _persistPersonal();
   }
 
@@ -174,6 +192,8 @@ class AppState extends ChangeNotifier {
     _personal!.expenses.add(e);
     _logActivity('Added', 'Expense',
         '${e.category}${e.notes.isEmpty ? '' : ' — ${e.notes}'}', e.amount);
+    var familyChanged = _mirrorToFamily(
+        id: e.id, date: e.date, type: 'expense', category: e.category, amount: e.amount, notes: e.notes);
     // An expense paid from the family wallet also records a wallet "spend".
     if (e.fromFamilyWallet && _family != null) {
       _family!.wallet.add(WalletEntry(
@@ -185,8 +205,9 @@ class AppState extends ChangeNotifier {
         amount: e.amount,
         purpose: '${e.category}: ${e.notes}',
       ));
-      await _persistFamily();
+      familyChanged = true;
     }
+    if (familyChanged) await _persistFamily();
     await _persistPersonal();
   }
 
@@ -198,6 +219,7 @@ class AppState extends ChangeNotifier {
       list.removeAt(idx);
       _logActivity('Deleted', 'Expense', e.category, e.amount);
     }
+    if (_unmirrorFromFamily(id)) await _persistFamily();
     await _persistPersonal();
   }
 
@@ -409,6 +431,40 @@ class AppState extends ChangeNotifier {
     if (_personal!.activities.length > maxEntries) {
       _personal!.activities.removeRange(maxEntries, _personal!.activities.length);
     }
+  }
+
+  // --- shared family ledger --------------------------------------------------
+  /// Mirror a personal income/expense into the SHARED family workbook so the
+  /// household (and the parent's daily report) sees everyone's activity.
+  /// Returns true if the family workbook changed (caller persists it).
+  bool _mirrorToFamily({
+    required String id,
+    required DateTime date,
+    required String type,
+    required String category,
+    required double amount,
+    required String notes,
+  }) {
+    if (_family == null || !inFamily) return false;
+    _family!.ledger.add(FamilyLedgerEntry(
+      id: id,
+      date: date,
+      memberEmail: _personal!.profile.email,
+      memberName: _personal!.profile.displayName,
+      type: type,
+      category: category,
+      amount: amount,
+      notes: notes,
+    ));
+    return true;
+  }
+
+  /// Remove the shared copy of a personal entry. Returns true if removed.
+  bool _unmirrorFromFamily(String id) {
+    if (_family == null) return false;
+    final before = _family!.ledger.length;
+    _family!.ledger.removeWhere((e) => e.id == id);
+    return _family!.ledger.length != before;
   }
 
   // --- internals -------------------------------------------------------------
