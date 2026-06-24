@@ -1,4 +1,6 @@
-import 'package:flutter/foundation.dart';
+// `Category` is also the name of a Flutter foundation annotation, so hide it to
+// avoid an ambiguous-import clash with our own `Category` model below.
+import 'package:flutter/foundation.dart' hide Category;
 
 import '../models/activity.dart';
 import '../models/category.dart';

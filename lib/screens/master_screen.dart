@@ -1,4 +1,6 @@
-import 'package:flutter/material.dart';
+// material re-exports the Flutter foundation `Category` annotation, which would
+// clash with our `Category` model — hide it so the model wins.
+import 'package:flutter/material.dart' hide Category;
 import 'package:provider/provider.dart';
 
 import '../models/category.dart';
