@@ -132,6 +132,13 @@ class DashboardScreen extends StatelessWidget {
             Color.lerp(theme.colorScheme.primary, Colors.black, 0.4)!,
           ],
         ),
+        boxShadow: [
+          BoxShadow(
+            color: theme.colorScheme.primary.withOpacity(0.30),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
       child: Row(
         children: [

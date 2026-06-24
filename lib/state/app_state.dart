@@ -57,6 +57,9 @@ class AppState extends ChangeNotifier {
   List<Activity> get activities => _personal?.activities ?? const [];
   double get walletBalance => _family?.walletBalance ?? 0;
 
+  /// Every family member's income/expenses, mirrored into the shared workbook.
+  List<FamilyLedgerEntry> get familyLedger => _family?.ledger ?? const [];
+
   // --- lifecycle -------------------------------------------------------------
   Future<void> init() async {
     status = AppStatus.initializing;
@@ -357,6 +360,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> removeMember(String email) async {
     _family!.members.removeWhere((e) => e.email == email);
+    _family!.tombstones.add(email); // so the removal syncs to other members
     await _persistFamily();
   }
 
@@ -389,6 +393,7 @@ class AppState extends ChangeNotifier {
     if (idx >= 0) {
       final e = list[idx];
       list.removeAt(idx);
+      _family!.tombstones.add(e.id); // so the deletion syncs to other members
       final kind = e.direction == WalletDirection.topUp ? 'Top-up' : 'Spend';
       _logActivity('Deleted', 'Wallet', kind, e.amount);
     }
@@ -482,6 +487,31 @@ class AppState extends ChangeNotifier {
     return list;
   }
 
+  // --- family (shared) analytics --------------------------------------------
+  /// Family ledger entries (everyone's) for a given month, newest first.
+  List<FamilyLedgerEntry> familyEntriesForMonth(int year, int month) =>
+      familyLedger.where((e) => e.year == year && e.month == month).toList()
+        ..sort((a, b) => b.date.compareTo(a.date));
+
+  double familyExpenseForMonth(int year, int month) => familyLedger
+      .where((e) => e.type == 'expense' && e.year == year && e.month == month)
+      .fold(0.0, (a, e) => a + e.amount);
+
+  double familyIncomeForMonth(int year, int month) => familyLedger
+      .where((e) => e.type == 'income' && e.year == year && e.month == month)
+      .fold(0.0, (a, e) => a + e.amount);
+
+  /// Map of member name -> total spend for the given month (expenses only).
+  Map<String, double> familySpendByMember(int year, int month) {
+    final map = <String, double>{};
+    for (final e in familyLedger.where(
+        (e) => e.type == 'expense' && e.year == year && e.month == month)) {
+      final who = e.memberName.isEmpty ? e.memberEmail : e.memberName;
+      map[who] = (map[who] ?? 0) + e.amount;
+    }
+    return map;
+  }
+
   // EMI roll-ups.
   double get totalEmiMonthly =>
       emis.where((e) => !e.isClosed).fold(0.0, (a, e) => a + e.monthlyAmount);
@@ -544,6 +574,7 @@ class AppState extends ChangeNotifier {
     if (_family == null) return false;
     final before = _family!.ledger.length;
     _family!.ledger.removeWhere((e) => e.id == id);
+    _family!.tombstones.add(id); // keep the deletion from re-syncing back
     return _family!.ledger.length != before;
   }
 

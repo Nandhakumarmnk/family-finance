@@ -42,6 +42,7 @@ class FinanceRepository {
   static const _sWallet = 'Wallet';
   static const _sActivity = 'Activity';
   static const _sFamilyLedger = 'FamilyLedger';
+  static const _sTombstones = 'Deleted';
 
   String _personalFileName(String email) =>
       'personal_${_sanitize(email)}.xlsx';
@@ -136,16 +137,22 @@ class FinanceRepository {
   // ---------------------------------------------------------------------------
 
   /// Load (or create) the shared family workbook for [familyId].
+  ///
+  /// The workbook is a single shared file: the household owner creates it and
+  /// shares it with each member, so it usually lives in ANOTHER account's
+  /// Drive. We therefore look for it across the whole Drive (not just our own
+  /// app folder) and only create a fresh one when nobody in the family has set
+  /// it up yet.
   Future<FamilyData> loadFamily(
     String familyId,
     String familyName, {
     required Member creatorAsMember,
   }) async {
-    final folderId = await _drive.ensureAppFolder();
     final name = _familyFileName(familyId);
-    final fileId = await _drive.findFile(name, parentId: folderId);
+    final fileId = await _drive.findSharedFile(name);
 
     if (fileId == null) {
+      final folderId = await _drive.ensureAppFolder();
       final data = FamilyData(
         fileId: '',
         familyId: familyId,
@@ -153,8 +160,13 @@ class FinanceRepository {
         members: [creatorAsMember],
         wallet: [],
         ledger: [],
+        tombstones: {},
       );
-      data.fileId = await _saveFamily(data, folderId: folderId, name: name);
+      data.fileId = await _drive.createXlsx(
+        name,
+        _encodeFamily(data),
+        parentId: folderId,
+      );
       return data;
     }
 
@@ -170,20 +182,41 @@ class FinanceRepository {
       ledger: ExcelCodec.dataRows(wb, _sFamilyLedger)
           .map(FamilyLedgerEntry.fromRow)
           .toList(),
+      tombstones: _readTombstones(wb),
     );
   }
 
+  /// Persist the shared family workbook. Because several family members write
+  /// to the SAME file from different devices, we first re-read the latest
+  /// remote copy and merge it in — so one member's save never silently wipes
+  /// entries another member added (the bug behind "common expenses don't show
+  /// the other account's data"). Writes back to the same file id; never forks
+  /// a private copy.
   Future<void> saveFamily(FamilyData data) async {
-    final folderId = await _drive.ensureAppFolder();
+    if (data.fileId.isNotEmpty) {
+      try {
+        final remote = ExcelCodec.decode(await _drive.downloadBytes(data.fileId));
+        _mergeRemoteIntoFamily(data, remote);
+      } catch (_) {
+        // Remote unreadable (offline / just deleted) — write what we have.
+      }
+      await _drive.updateXlsx(data.fileId, _encodeFamily(data));
+      return;
+    }
+    // No id yet: locate the shared copy if one exists, otherwise create it.
     final name = _familyFileName(data.familyId);
-    data.fileId = await _saveFamily(data, folderId: folderId, name: name);
+    final existing = await _drive.findSharedFile(name);
+    if (existing != null) {
+      data.fileId = existing;
+      await saveFamily(data); // now takes the merge-and-update path above
+      return;
+    }
+    final folderId = await _drive.ensureAppFolder();
+    data.fileId =
+        await _drive.createXlsx(name, _encodeFamily(data), parentId: folderId);
   }
 
-  Future<String> _saveFamily(
-    FamilyData data, {
-    required String folderId,
-    required String name,
-  }) async {
+  Uint8List _encodeFamily(FamilyData data) {
     final sheets = <String, List<List<dynamic>>>{
       _sMembers: [Member.header, ...data.members.map((e) => e.toRow())],
       _sWallet: [WalletEntry.header, ...data.wallet.map((e) => e.toRow())],
@@ -191,9 +224,60 @@ class FinanceRepository {
         FamilyLedgerEntry.header,
         ...data.ledger.map((e) => e.toRow())
       ],
+      _sTombstones: [
+        const ['id'],
+        ...data.tombstones.map((id) => [id]),
+      ],
     };
-    final bytes = ExcelCodec.encode(sheets);
-    return _drive.upsertXlsx(name, bytes, parentId: folderId);
+    return ExcelCodec.encode(sheets);
+  }
+
+  Set<String> _readTombstones(Map<String, List<List<dynamic>>> wb) =>
+      ExcelCodec.dataRows(wb, _sTombstones)
+          .where((r) => r.isNotEmpty)
+          .map((r) => '${r.first}'.trim())
+          .where((s) => s.isNotEmpty)
+          .toSet();
+
+  /// Merge the remote workbook [wb] into the in-memory [data]:
+  ///   * tombstones (deletes) are unioned — a delete by anyone wins;
+  ///   * members / wallet / ledger are unioned by key, with our local copy
+  ///     winning field conflicts, and anything tombstoned removed.
+  /// This keeps every member's additions while still letting deletes
+  /// propagate across accounts.
+  void _mergeRemoteIntoFamily(
+      FamilyData data, Map<String, List<List<dynamic>>> wb) {
+    data.tombstones.addAll(_readTombstones(wb));
+    final dead = data.tombstones;
+
+    final remoteMembers =
+        ExcelCodec.dataRows(wb, _sMembers).map(Member.fromRow).toList();
+    final remoteWallet =
+        ExcelCodec.dataRows(wb, _sWallet).map(WalletEntry.fromRow).toList();
+    final remoteLedger = ExcelCodec.dataRows(wb, _sFamilyLedger)
+        .map(FamilyLedgerEntry.fromRow)
+        .toList();
+
+    _unionInto<Member>(data.members, remoteMembers, (m) => m.email, dead);
+    _unionInto<WalletEntry>(data.wallet, remoteWallet, (e) => e.id, dead);
+    _unionInto<FamilyLedgerEntry>(
+        data.ledger, remoteLedger, (e) => e.id, dead);
+  }
+
+  /// Add any [remote] items whose key isn't already present in [local]
+  /// (local wins on conflict), then drop everything whose key is tombstoned.
+  static void _unionInto<T>(
+    List<T> local,
+    List<T> remote,
+    String Function(T) keyOf,
+    Set<String> dead,
+  ) {
+    final have = local.map(keyOf).toSet();
+    for (final r in remote) {
+      final k = keyOf(r);
+      if (have.add(k)) local.add(r);
+    }
+    local.removeWhere((e) => dead.contains(keyOf(e)));
   }
 
   /// Invite another user to the family workbook (Drive permission + email).
@@ -242,6 +326,11 @@ class FamilyData {
   final List<WalletEntry> wallet;
   final List<FamilyLedgerEntry> ledger;
 
+  /// Keys (entry ids / member emails) that have been deleted. Persisted so a
+  /// delete on one device isn't resurrected when another device merges its
+  /// older copy back in.
+  final Set<String> tombstones;
+
   FamilyData({
     required this.fileId,
     required this.familyId,
@@ -249,7 +338,8 @@ class FamilyData {
     required this.members,
     required this.wallet,
     required this.ledger,
-  });
+    Set<String>? tombstones,
+  }) : tombstones = tombstones ?? <String>{};
 
   double get walletBalance =>
       wallet.fold(0.0, (sum, e) => sum + e.signedAmount);

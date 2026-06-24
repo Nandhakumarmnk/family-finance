@@ -129,7 +129,7 @@ class LoginScreen extends StatelessWidget {
                                 const SizedBox(width: 6),
                                 Flexible(
                                   child: Text(
-                                    'Only files this app creates (drive.file)',
+                                    'Securely syncs your family workbook on Drive',
                                     style: theme.textTheme.labelSmall?.copyWith(
                                         color: scheme.onSurfaceVariant),
                                   ),

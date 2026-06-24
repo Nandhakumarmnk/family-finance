@@ -7,7 +7,10 @@ wallet"** that multiple users can contribute to.
 
 ## Features
 
-- 🔐 **Login** with Google Sign-In (uses the least-privilege `drive.file` scope).
+- 🔐 **Login** with Google Sign-In. Uses the Google **`drive`** scope so that
+  an invited member can open the *one* shared family workbook the owner created
+  — the shared "common wallet"/expenses can't sync across accounts under the
+  narrower `drive.file` scope. (See the multi-user note below.)
 - 👤 **My Details** — profile, currency, and family linking.
 - 👥 **Users / Master page** — manage multiple users (multi-user roster),
   roles, and invitations; reference master data (expense categories).
@@ -27,13 +30,19 @@ wallet"** that multiple users can contribute to.
 
 A `FamilyFinance` folder is created in your Drive containing:
 
-| File                         | Sheets                                   |
-|------------------------------|------------------------------------------|
-| `personal_<email>.xlsx`      | Profile, Salary, Expenses, EMIs, Targets |
-| `family_<familyId>.xlsx`     | Members, Wallet  *(shared with family)*  |
+| File                         | Sheets                                                   |
+|------------------------------|----------------------------------------------------------|
+| `personal_<email>.xlsx`      | Profile, Salary, Expenses, EMIs, Targets, Activity       |
+| `family_<familyId>.xlsx`     | Members, Wallet, FamilyLedger, Deleted *(shared)*        |
 
 Family members share **one** family workbook by using the **same Family ID**
-and being invited (Drive permission) from the wallet/master screens.
+and being invited (Drive permission) from the wallet/master screens. The owner
+creates it and shares it; every other member's app finds that one shared file
+(it lives in the owner's Drive) and reads/writes the **same** copy — so the
+common wallet and common expenses stay in sync across accounts. Saves merge the
+latest remote copy first, so two members editing from different phones never
+overwrite each other (the `Deleted` sheet tracks removals so deletes still
+propagate).
 
 ---
 
@@ -77,6 +86,13 @@ You need OAuth credentials so the app can sign in and access Drive.
 2. **APIs & Services → Enable APIs** → enable **Google Drive API**.
 3. **OAuth consent screen** → External → add your Google account as a **Test
    user** (so you can sign in before the app is verified).
+   - **Add the `.../auth/drive` scope** under *Scopes* (the app uses the full
+     Drive scope so invited members can open the shared family workbook). This
+     is a sensitive/restricted scope: test users can use it immediately, but
+     publishing to all users later needs Google's verification.
+   - ⚠️ **Already signed in from an older build?** Sign out and sign back in
+     once so Google grants the new Drive permission — silent sign-in keeps the
+     old, narrower grant.
 4. **Credentials → Create credentials → OAuth client ID** for each platform you
    target:
 

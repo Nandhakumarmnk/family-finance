@@ -56,31 +56,62 @@ class FamilyWalletScreen extends StatelessWidget {
 
   Widget _balanceCard(BuildContext context, AppState s, double balance, String cur) {
     final theme = Theme.of(context);
-    return Card(
-      color: theme.colorScheme.primaryContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(children: [
-              Icon(Icons.family_restroom, color: theme.colorScheme.onPrimaryContainer),
-              const SizedBox(width: 8),
-              Text(s.family?.familyName ?? 'Family wallet',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                      color: theme.colorScheme.onPrimaryContainer, fontWeight: FontWeight.bold)),
-            ]),
-            const SizedBox(height: 16),
-            Text('Common wallet balance',
-                style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onPrimaryContainer)),
-            Text(Fmt.currency(balance, code: cur),
-                style: theme.textTheme.headlineMedium?.copyWith(
-                    color: theme.colorScheme.onPrimaryContainer, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 4),
-            Text('${s.members.length} member(s)',
-                style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onPrimaryContainer)),
-          ],
+    final primary = theme.colorScheme.primary;
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [primary, Color.lerp(primary, Colors.black, 0.4)!],
         ),
+        boxShadow: [
+          BoxShadow(
+            color: primary.withOpacity(0.30),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Icon(Icons.family_restroom, size: 18, color: Colors.white.withOpacity(0.9)),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(s.family?.familyName ?? 'Family wallet',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                      color: Colors.white, fontWeight: FontWeight.w700)),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.18),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text('${s.members.length} member${s.members.length == 1 ? '' : 's'}',
+                  style: theme.textTheme.labelSmall
+                      ?.copyWith(color: Colors.white, fontWeight: FontWeight.w600)),
+            ),
+          ]),
+          const SizedBox(height: 18),
+          Text('Common wallet balance',
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: Colors.white.withOpacity(0.85))),
+          const SizedBox(height: 2),
+          Text(Fmt.currency(balance, code: cur),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.headlineMedium?.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.5,
+                  fontFeatures: const [FontFeature.tabularFigures()])),
+        ],
       ),
     );
   }

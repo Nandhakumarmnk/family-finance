@@ -10,7 +10,7 @@ import 'dashboard_screen.dart';
 import 'reports_export_screen.dart';
 import 'emi_screen.dart';
 import 'expenses_screen.dart';
-import 'family_wallet_screen.dart';
+import 'family_screen.dart';
 import 'master_screen.dart';
 import 'reports_screen.dart';
 import 'salary_screen.dart';
@@ -35,7 +35,7 @@ class _HomeShellState extends State<HomeShell> {
     ExpensesScreen(),
     EmiScreen(),
     ReportsScreen(),
-    FamilyWalletScreen(),
+    FamilyScreen(),
   ];
 
   @override

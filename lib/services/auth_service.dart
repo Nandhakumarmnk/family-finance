@@ -5,8 +5,15 @@ import 'package:googleapis/drive/v3.dart' as drive;
 import 'package:http/http.dart' as http;
 
 /// Handles Google Sign-In and produces an authenticated HTTP client that the
-/// Drive service uses. We request the `drive.file` scope which grants access
-/// only to files this app creates — the least-privilege option for Drive.
+/// Drive service uses.
+///
+/// We request the full `drive` scope (not the narrower `drive.file`). The app
+/// stores each household's data in ONE shared workbook that the family owner
+/// creates and shares with the other members. Under `drive.file` an invited
+/// member's app cannot see a file another account created and shared with them
+/// — so the shared "common" wallet/expenses never sync. The `drive` scope lets
+/// every member open that one shared workbook, which is what makes multi-user
+/// common expenses work across two Google accounts.
 class AuthService {
   /// OAuth *Web* client ID, injected at build time via
   /// `--dart-define=GOOGLE_SERVER_CLIENT_ID=...`. Required on Android so the
@@ -17,7 +24,7 @@ class AuthService {
 
   static const List<String> _scopes = <String>[
     'email',
-    drive.DriveApi.driveFileScope,
+    drive.DriveApi.driveScope,
   ];
 
   // The web plugin mutates the scopes list internally, so every call gets a

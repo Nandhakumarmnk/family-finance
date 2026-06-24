@@ -74,6 +74,28 @@ class DriveService {
     });
   }
 
+  /// Find a file by name anywhere the signed-in user can reach it — including
+  /// files another family member created and shared with them ("Shared with
+  /// me"), which is how the shared family workbook is located on a member's
+  /// device. Returns the OLDEST match (the original, owner-created copy) so
+  /// every member converges on a single canonical workbook even if an older
+  /// build of the app left behind a duplicate fork in someone's own folder.
+  Future<String?> findSharedFile(String name) {
+    final escapedName = name.replaceAll("'", r"\'");
+    final q = "name='$escapedName' and trashed=false";
+    return _run('findSharedFile q=[$q]', () async {
+      final res = await _api.files.list(
+        q: q,
+        $fields: 'files(id,name,createdTime)',
+        orderBy: 'createdTime', // ascending — oldest first
+        spaces: 'drive',
+      );
+      final files = res.files;
+      if (files == null || files.isEmpty) return null;
+      return files.first.id;
+    });
+  }
+
   /// Download a file's raw bytes by id.
   Future<Uint8List> downloadBytes(String fileId) =>
       _run('downloadBytes', () async {
