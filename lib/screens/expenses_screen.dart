@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../models/expense.dart';
 import '../state/app_state.dart';
+import '../utils/category_icons.dart';
 import '../utils/format.dart';
 import '../widgets/common.dart';
 
@@ -91,7 +92,11 @@ class ExpensesScreen extends StatelessWidget {
         child: ListTile(
           leading: CircleAvatar(
             backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
-            child: Icon(_iconFor(e.category), size: 20),
+            child: Icon(
+              CategoryIcons.byKey(context.read<AppState>().iconKeyFor(e.category)),
+              size: 20,
+              color: Theme.of(context).colorScheme.onSecondaryContainer,
+            ),
           ),
           title: Text(e.category),
           subtitle: Text(
@@ -105,35 +110,6 @@ class ExpensesScreen extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  IconData _iconFor(String category) {
-    switch (category) {
-      case 'Food':
-        return Icons.restaurant;
-      case 'Groceries':
-        return Icons.local_grocery_store;
-      case 'Rent':
-        return Icons.home;
-      case 'Utilities':
-        return Icons.bolt;
-      case 'Travel':
-        return Icons.directions_car;
-      case 'Health':
-        return Icons.local_hospital;
-      case 'Education':
-        return Icons.school;
-      case 'Shopping':
-        return Icons.shopping_bag;
-      case 'Entertainment':
-        return Icons.movie;
-      case 'EMI':
-        return Icons.account_balance;
-      case 'Insurance':
-        return Icons.shield;
-      default:
-        return Icons.category;
-    }
   }
 
   void _addDialog(BuildContext context) {
@@ -157,13 +133,20 @@ class _ExpenseFormState extends State<_ExpenseForm> {
   final _form = GlobalKey<FormState>();
   final _amount = TextEditingController();
   final _notes = TextEditingController();
-  String _category = Expense.categories.first;
+  late String _category;
   String _mode = 'UPI';
   DateTime _date = DateTime.now();
   bool _fromWallet = false;
   bool _saving = false;
 
   static const _modes = ['UPI', 'Cash', 'Card', 'Bank'];
+
+  @override
+  void initState() {
+    super.initState();
+    final names = context.read<AppState>().categoryNames;
+    _category = names.isNotEmpty ? names.first : 'Other';
+  }
 
   @override
   void dispose() {
@@ -190,7 +173,13 @@ class _ExpenseFormState extends State<_ExpenseForm> {
 
   @override
   Widget build(BuildContext context) {
-    final inFamily = context.read<AppState>().inFamily;
+    final app = context.watch<AppState>();
+    final inFamily = app.inFamily;
+    final cats = app.categories;
+    final names = cats.map((c) => c.name).toList();
+    final value = names.contains(_category)
+        ? _category
+        : (names.isNotEmpty ? names.first : null);
     return Padding(
       padding: EdgeInsets.only(
         left: 16,
@@ -216,10 +205,20 @@ class _ExpenseFormState extends State<_ExpenseForm> {
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
-                value: _category,
+                value: value,
+                isExpanded: true,
                 decoration: const InputDecoration(labelText: 'Category'),
-                items: Expense.categories
-                    .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                items: cats
+                    .map((c) => DropdownMenuItem(
+                          value: c.name,
+                          child: Row(
+                            children: [
+                              Icon(CategoryIcons.byKey(c.iconKey), size: 18),
+                              const SizedBox(width: 10),
+                              Text(c.name),
+                            ],
+                          ),
+                        ))
                     .toList(),
                 onChanged: (v) => setState(() => _category = v ?? _category),
               ),

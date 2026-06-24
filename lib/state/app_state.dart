@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../models/activity.dart';
+import '../models/category.dart';
 import '../models/emi.dart';
 import '../models/expense.dart';
 import '../models/family_ledger.dart';
@@ -56,6 +57,19 @@ class AppState extends ChangeNotifier {
   List<WalletEntry> get wallet => _family?.wallet ?? const [];
   List<Activity> get activities => _personal?.activities ?? const [];
   double get walletBalance => _family?.walletBalance ?? 0;
+
+  /// Editable expense categories (the "category master").
+  List<Category> get categories => _personal?.categories ?? const [];
+  List<String> get categoryNames => categories.map((c) => c.name).toList();
+
+  /// The icon key stored for [categoryName] ('category' if not found) — the UI
+  /// resolves it to an icon via CategoryIcons.byKey.
+  String iconKeyFor(String categoryName) {
+    for (final c in categories) {
+      if (c.name == categoryName) return c.iconKey;
+    }
+    return 'category';
+  }
 
   /// Every family member's income/expenses, mirrored into the shared workbook.
   List<FamilyLedgerEntry> get familyLedger => _family?.ledger ?? const [];
@@ -200,6 +214,39 @@ class AppState extends ChangeNotifier {
     if (phone != null) p.phone = phone;
     if (occupation != null) p.occupation = occupation;
     if (currencyCode != null) p.currencyCode = currencyCode;
+    await _persistPersonal();
+  }
+
+  // --- category master -------------------------------------------------------
+  /// Add a category. Ignored (no duplicate) if the name already exists.
+  Future<void> addCategory(String name, String iconKey) async {
+    final n = name.trim();
+    if (_personal == null || n.isEmpty) return;
+    if (categories.any((c) => c.name.toLowerCase() == n.toLowerCase())) {
+      AppFeedback.error('“$n” already exists');
+      return;
+    }
+    _personal!.categories.add(Category(name: n, iconKey: iconKey));
+    await _persistPersonal();
+    _celebrate('Category added');
+  }
+
+  /// Rename / re-icon an existing category (matched by [originalName]).
+  Future<void> updateCategory(
+      String originalName, String name, String iconKey) async {
+    if (_personal == null) return;
+    final idx = _personal!.categories.indexWhere((c) => c.name == originalName);
+    if (idx < 0) return;
+    _personal!.categories[idx]
+      ..name = name.trim().isEmpty ? originalName : name.trim()
+      ..iconKey = iconKey;
+    await _persistPersonal();
+    _celebrate('Category updated');
+  }
+
+  Future<void> deleteCategory(String name) async {
+    if (_personal == null) return;
+    _personal!.categories.removeWhere((c) => c.name == name);
     await _persistPersonal();
   }
 

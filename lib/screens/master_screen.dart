@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/category.dart';
 import '../models/member.dart';
 import '../state/app_state.dart';
+import '../utils/category_icons.dart';
 import '../widgets/common.dart';
 
-/// Master / Users page — the central place to manage the family's users
-/// (multi-user roster), their roles, and invitations. Backed by the `Members`
-/// sheet in the shared family workbook.
+/// Master / Users page — manage the family's users (multi-user roster), their
+/// roles and invitations (backed by the shared family workbook), plus the
+/// editable **expense category master** (icons + names, stored per user in the
+/// personal workbook).
 class MasterScreen extends StatelessWidget {
   const MasterScreen({super.key});
 
@@ -24,23 +27,36 @@ class MasterScreen extends StatelessWidget {
               label: const Text('Add user'),
             )
           : null,
-      body: !s.inFamily
-          ? const _NoFamilyHint()
-          : ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                _familyCard(context, s),
-                const SizedBox(height: 8),
-                const SectionHeader('Family members'),
-                if (s.members.isEmpty)
-                  const EmptyState(icon: Icons.groups_outlined, message: 'No members yet.')
-                else
-                  ...s.members.map((m) => _memberTile(context, s, m)),
-                const SizedBox(height: 16),
-                const SectionHeader('Master data'),
-                _categoriesCard(context),
-              ],
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
+        children: [
+          if (s.inFamily) ...[
+            _familyCard(context, s),
+            const SizedBox(height: 8),
+            const SectionHeader('Family members'),
+            if (s.members.isEmpty)
+              const EmptyState(
+                  icon: Icons.groups_outlined, message: 'No members yet.')
+            else
+              ...s.members.map((m) => _memberTile(context, s, m)),
+          ] else
+            _noFamilyCard(context),
+          const SizedBox(height: 16),
+          SectionHeader(
+            'Expense categories',
+            trailing: TextButton.icon(
+              onPressed: () => _categoryDialog(context),
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Add'),
             ),
+          ),
+          if (s.categories.isEmpty)
+            const EmptyState(
+                icon: Icons.category_outlined, message: 'No categories yet.')
+          else
+            ...s.categories.map((c) => _categoryTile(context, s, c)),
+        ],
+      ),
     );
   }
 
@@ -61,14 +77,37 @@ class MasterScreen extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(s.family?.familyName ?? s.profile?.familyName ?? 'Family',
-                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                      style: theme.textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.bold)),
                   Text('ID: ${s.profile?.familyId ?? ''}',
                       style: theme.textTheme.bodySmall),
                 ],
               ),
             ),
             Text('${s.members.length}',
-                style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
+                style: theme.textTheme.headlineSmall
+                    ?.copyWith(fontWeight: FontWeight.bold)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _noFamilyCard(BuildContext context) {
+    return const Card(
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Icon(Icons.groups_outlined),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Set a Family ID in “My Details” to add users and share a '
+                'common wallet. You can still manage your expense categories '
+                'below.',
+              ),
+            ),
           ],
         ),
       ),
@@ -79,10 +118,16 @@ class MasterScreen extends StatelessWidget {
     final isSelf = m.email == s.profile?.email;
     return Card(
       child: ListTile(
-        leading: CircleAvatar(child: Text(m.name.isEmpty ? '?' : m.name[0].toUpperCase())),
+        leading: CircleAvatar(
+            child: Text(m.name.isEmpty ? '?' : m.name[0].toUpperCase())),
         title: Row(children: [
           Flexible(child: Text(m.name)),
-          if (isSelf) const Padding(padding: EdgeInsets.only(left: 6), child: Chip(label: Text('You'), visualDensity: VisualDensity.compact)),
+          if (isSelf)
+            const Padding(
+                padding: EdgeInsets.only(left: 6),
+                child: Chip(
+                    label: Text('You'),
+                    visualDensity: VisualDensity.compact)),
         ]),
         subtitle: Text('${m.email}\n${m.role} • ${m.relationship}'
             '${m.active ? '' : ' • inactive'}'),
@@ -94,38 +139,121 @@ class MasterScreen extends StatelessWidget {
           },
           itemBuilder: (_) => [
             const PopupMenuItem(value: 'edit', child: Text('Edit')),
-            if (!isSelf) const PopupMenuItem(value: 'remove', child: Text('Remove')),
+            if (!isSelf)
+              const PopupMenuItem(value: 'remove', child: Text('Remove')),
           ],
         ),
       ),
     );
   }
 
-  Widget _categoriesCard(BuildContext context) {
-    // Master data reference — expense categories used app-wide.
+  // --- category master -------------------------------------------------------
+  Widget _categoryTile(BuildContext context, AppState s, Category c) {
+    final theme = Theme.of(context);
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Expense categories', style: TextStyle(fontWeight: FontWeight.w600)),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: const [
-                _Tag('Food'), _Tag('Groceries'), _Tag('Rent'), _Tag('Utilities'),
-                _Tag('Travel'), _Tag('Health'), _Tag('Education'), _Tag('Shopping'),
-                _Tag('Entertainment'), _Tag('EMI'), _Tag('Insurance'), _Tag('Other'),
-              ],
-            ),
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: theme.colorScheme.secondaryContainer,
+          child: Icon(CategoryIcons.byKey(c.iconKey),
+              size: 20, color: theme.colorScheme.onSecondaryContainer),
+        ),
+        title: Text(c.name),
+        trailing: PopupMenuButton<String>(
+          onSelected: (v) {
+            if (v == 'edit') _categoryDialog(context, existing: c);
+            if (v == 'delete') s.deleteCategory(c.name);
+          },
+          itemBuilder: (_) => [
+            const PopupMenuItem(value: 'edit', child: Text('Edit')),
+            const PopupMenuItem(value: 'delete', child: Text('Delete')),
           ],
         ),
       ),
     );
   }
 
+  Future<void> _categoryDialog(BuildContext context, {Category? existing}) async {
+    final nameCtrl = TextEditingController(text: existing?.name ?? '');
+    String iconKey = existing?.iconKey ?? CategoryIcons.keys.first;
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) {
+          final scheme = Theme.of(ctx).colorScheme;
+          return AlertDialog(
+            title: Text(existing == null ? 'Add category' : 'Edit category'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(
+                    controller: nameCtrl,
+                    autofocus: existing == null,
+                    decoration: const InputDecoration(labelText: 'Name'),
+                  ),
+                  const SizedBox(height: 16),
+                  Text('Icon', style: Theme.of(ctx).textTheme.labelLarge),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final k in CategoryIcons.keys)
+                        InkWell(
+                          borderRadius: BorderRadius.circular(12),
+                          onTap: () => setS(() => iconKey = k),
+                          child: Container(
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              color: k == iconKey
+                                  ? scheme.primaryContainer
+                                  : scheme.surfaceContainerHighest,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: k == iconKey
+                                    ? scheme.primary
+                                    : Colors.transparent,
+                                width: 2,
+                              ),
+                            ),
+                            child: Icon(CategoryIcons.byKey(k),
+                                size: 22,
+                                color: k == iconKey
+                                    ? scheme.onPrimaryContainer
+                                    : scheme.onSurfaceVariant),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Cancel')),
+              FilledButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text('Save')),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (saved != true || !context.mounted) return;
+    final s = context.read<AppState>();
+    if (existing == null) {
+      await s.addCategory(nameCtrl.text, iconKey);
+    } else {
+      await s.updateCategory(existing.name, nameCtrl.text, iconKey);
+    }
+  }
+
+  // --- members ---------------------------------------------------------------
   Future<void> _memberDialog(BuildContext context, {Member? existing}) async {
     final email = TextEditingController(text: existing?.email ?? '');
     final name = TextEditingController(text: existing?.name ?? '');
@@ -152,14 +280,20 @@ class MasterScreen extends StatelessWidget {
                   decoration: const InputDecoration(labelText: 'Email'),
                 ),
                 const SizedBox(height: 8),
-                TextField(controller: name, decoration: const InputDecoration(labelText: 'Name')),
+                TextField(
+                    controller: name,
+                    decoration: const InputDecoration(labelText: 'Name')),
                 const SizedBox(height: 8),
-                TextField(controller: phone, decoration: const InputDecoration(labelText: 'Phone')),
+                TextField(
+                    controller: phone,
+                    decoration: const InputDecoration(labelText: 'Phone')),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
                   value: role,
                   decoration: const InputDecoration(labelText: 'Role'),
-                  items: Member.roles.map((r) => DropdownMenuItem(value: r, child: Text(r))).toList(),
+                  items: Member.roles
+                      .map((r) => DropdownMenuItem(value: r, child: Text(r)))
+                      .toList(),
                   onChanged: (v) => setS(() => role = v ?? role),
                 ),
                 const SizedBox(height: 8),
@@ -181,7 +315,8 @@ class MasterScreen extends StatelessWidget {
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
                     title: const Text('Send Drive invite'),
-                    subtitle: const Text('Share the family workbook with this email'),
+                    subtitle: const Text(
+                        'Share the family workbook with this email'),
                     value: invite,
                     onChanged: (v) => setS(() => invite = v),
                   ),
@@ -189,8 +324,12 @@ class MasterScreen extends StatelessWidget {
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Save')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel')),
+            FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Save')),
           ],
         ),
       ),
@@ -200,7 +339,9 @@ class MasterScreen extends StatelessWidget {
     final s = context.read<AppState>();
     final m = Member(
       email: email.text.trim(),
-      name: name.text.trim().isEmpty ? email.text.split('@').first : name.text.trim(),
+      name: name.text.trim().isEmpty
+          ? email.text.split('@').first
+          : name.text.trim(),
       role: role,
       relationship: relationship,
       phone: phone.text.trim(),
@@ -210,32 +351,5 @@ class MasterScreen extends StatelessWidget {
     if (existing == null && invite && m.email.isNotEmpty) {
       await s.inviteMember(m.email);
     }
-  }
-}
-
-class _Tag extends StatelessWidget {
-  final String label;
-  const _Tag(this.label);
-
-  @override
-  Widget build(BuildContext context) {
-    return Chip(label: Text(label), visualDensity: VisualDensity.compact);
-  }
-}
-
-class _NoFamilyHint extends StatelessWidget {
-  const _NoFamilyHint();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.all(32),
-      child: EmptyState(
-        icon: Icons.groups_outlined,
-        message: 'Set a Family ID in “My Details” first.\n'
-            'Then you can add multiple users here and invite them to the '
-            'shared family workbook.',
-      ),
-    );
   }
 }

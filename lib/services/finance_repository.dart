@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import '../models/activity.dart';
+import '../models/category.dart';
 import '../models/emi.dart';
 import '../models/expense.dart';
 import '../models/family_ledger.dart';
@@ -41,6 +42,7 @@ class FinanceRepository {
   static const _sMembers = 'Members';
   static const _sWallet = 'Wallet';
   static const _sActivity = 'Activity';
+  static const _sCategories = 'Categories';
   static const _sFamilyLedger = 'FamilyLedger';
   static const _sTombstones = 'Deleted';
   static const _sInfo = 'Info'; // key/value metadata (e.g. shared family name)
@@ -72,6 +74,7 @@ class FinanceRepository {
         emis: [],
         targets: [],
         activities: [],
+        categories: Category.defaults(),
       );
       data.fileId = await _savePersonal(data, folderId: folderId, name: name);
       return data;
@@ -97,6 +100,8 @@ class FinanceRepository {
       occupation: profile.occupation,
     );
 
+    final cats =
+        ExcelCodec.dataRows(wb, _sCategories).map(Category.fromRow).toList();
     return PersonalData(
       fileId: fileId,
       profile: merged,
@@ -107,6 +112,9 @@ class FinanceRepository {
       targets: ExcelCodec.dataRows(wb, _sTargets).map(Target.fromRow).toList(),
       activities:
           ExcelCodec.dataRows(wb, _sActivity).map(Activity.fromRow).toList(),
+      // Pre-categories workbooks have no Categories sheet — seed the defaults
+      // so the picker is never empty (persisted on the next save).
+      categories: cats.isEmpty ? Category.defaults() : cats,
     );
   }
 
@@ -128,6 +136,7 @@ class FinanceRepository {
       _sEmis: [Emi.header, ...data.emis.map((e) => e.toRow())],
       _sTargets: [Target.header, ...data.targets.map((e) => e.toRow())],
       _sActivity: [Activity.header, ...data.activities.map((e) => e.toRow())],
+      _sCategories: [Category.header, ...data.categories.map((e) => e.toRow())],
     };
     final bytes = ExcelCodec.encode(sheets);
     return _drive.upsertXlsx(name, bytes, parentId: folderId);
@@ -339,6 +348,7 @@ class PersonalData {
   final List<Emi> emis;
   final List<Target> targets;
   final List<Activity> activities;
+  final List<Category> categories;
 
   PersonalData({
     required this.fileId,
@@ -348,6 +358,7 @@ class PersonalData {
     required this.emis,
     required this.targets,
     required this.activities,
+    required this.categories,
   });
 }
 

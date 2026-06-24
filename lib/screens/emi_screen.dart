@@ -159,6 +159,10 @@ class EmiScreen extends StatelessWidget {
   }
 }
 
+/// How the user wants to capture the loan's cost: by an interest rate, or by
+/// entering the remaining/outstanding balance directly.
+enum _EmiExtra { interest, remaining }
+
 class _EmiForm extends StatefulWidget {
   const _EmiForm();
 
@@ -173,6 +177,8 @@ class _EmiFormState extends State<_EmiForm> {
   final _total = TextEditingController();
   final _paid = TextEditingController(text: '0');
   final _rate = TextEditingController(text: '0');
+  final _outstanding = TextEditingController();
+  _EmiExtra _extra = _EmiExtra.interest;
   DateTime _start = DateTime.now();
   bool _saving = false;
 
@@ -183,6 +189,7 @@ class _EmiFormState extends State<_EmiForm> {
     _total.dispose();
     _paid.dispose();
     _rate.dispose();
+    _outstanding.dispose();
     super.dispose();
   }
 
@@ -190,13 +197,17 @@ class _EmiFormState extends State<_EmiForm> {
     if (_saving) return; // guard against double/triple taps while saving
     if (!_form.currentState!.validate()) return;
     setState(() => _saving = true);
+    final byInterest = _extra == _EmiExtra.interest;
     await context.read<AppState>().addEmi(Emi(
           id: newId('emi'),
           name: _name.text.trim(),
           monthlyAmount: double.parse(_monthly.text.trim()),
           totalMonths: int.parse(_total.text.trim()),
           paidMonths: int.tryParse(_paid.text.trim()) ?? 0,
-          annualInterestRate: double.tryParse(_rate.text.trim()) ?? 0,
+          annualInterestRate:
+              byInterest ? (double.tryParse(_rate.text.trim()) ?? 0) : 0,
+          outstandingAmount:
+              byInterest ? 0 : (double.tryParse(_outstanding.text.trim()) ?? 0),
           startDate: _start,
         ));
     if (mounted) Navigator.pop(context);
@@ -253,12 +264,43 @@ class _EmiFormState extends State<_EmiForm> {
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _rate,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(labelText: 'Interest % (optional)'),
+              const SizedBox(height: 16),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Add either',
+                    style: Theme.of(context).textTheme.labelLarge),
               ),
+              const SizedBox(height: 8),
+              SegmentedButton<_EmiExtra>(
+                segments: const [
+                  ButtonSegment(
+                      value: _EmiExtra.interest, label: Text('Interest %')),
+                  ButtonSegment(
+                      value: _EmiExtra.remaining, label: Text('Remaining amt')),
+                ],
+                selected: {_extra},
+                showSelectedIcon: false,
+                onSelectionChanged: (v) => setState(() => _extra = v.first),
+              ),
+              const SizedBox(height: 12),
+              if (_extra == _EmiExtra.interest)
+                TextFormField(
+                  controller: _rate,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration:
+                      const InputDecoration(labelText: 'Interest % per year'),
+                )
+              else
+                TextFormField(
+                  controller: _outstanding,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                    labelText: 'Total remaining / pending amount',
+                    helperText: 'Overrides the monthly × remaining estimate',
+                  ),
+                ),
               const SizedBox(height: 12),
               DatePickerField(
                 date: _start,

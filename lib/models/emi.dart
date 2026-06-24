@@ -12,6 +12,12 @@ class Emi {
   final DateTime startDate;
   final String notes;
 
+  /// Optional: the actual outstanding/pending amount the user owes. When > 0
+  /// this overrides the simple monthly × remaining estimate (useful when the
+  /// payoff includes interest, or the user tracks the loan by balance rather
+  /// than by an interest rate). 0 means "derive it from the instalments".
+  final double outstandingAmount;
+
   Emi({
     required this.id,
     required this.name,
@@ -19,6 +25,7 @@ class Emi {
     required this.totalMonths,
     this.paidMonths = 0,
     this.annualInterestRate = 0,
+    this.outstandingAmount = 0,
     required this.startDate,
     this.notes = '',
   });
@@ -28,9 +35,16 @@ class Emi {
 
   bool get isClosed => remainingMonths == 0;
 
+  /// True when the remaining amount was entered directly rather than derived.
+  bool get hasManualOutstanding => outstandingAmount > 0;
+
   double get totalPayable => monthlyAmount * totalMonths;
   double get amountPaid => monthlyAmount * paidMonths;
-  double get amountRemaining => monthlyAmount * remainingMonths;
+
+  /// What's still owed: the manually-entered outstanding amount if set,
+  /// otherwise monthly × remaining instalments.
+  double get amountRemaining =>
+      hasManualOutstanding ? outstandingAmount : monthlyAmount * remainingMonths;
 
   double get progress => totalMonths == 0 ? 1 : paidMonths / totalMonths;
 
@@ -42,6 +56,7 @@ class Emi {
   DateTime get nextDueDate =>
       DateTime(startDate.year, startDate.month + paidMonths, startDate.day);
 
+  // `outstandingAmount` is appended last so older 8-column sheets still load.
   List<dynamic> toRow() => [
         id,
         name,
@@ -51,6 +66,7 @@ class Emi {
         annualInterestRate,
         startDate.toIso8601String(),
         notes,
+        outstandingAmount,
       ];
 
   static const List<String> header = [
@@ -62,6 +78,7 @@ class Emi {
     'annualInterestRate',
     'startDate',
     'notes',
+    'outstandingAmount',
   ];
 
   factory Emi.fromRow(List<dynamic> r) {
@@ -75,6 +92,7 @@ class Emi {
       annualInterestRate: double.tryParse(at(5)) ?? 0,
       startDate: DateTime.tryParse(at(6)) ?? DateTime(1970),
       notes: at(7),
+      outstandingAmount: double.tryParse(at(8)) ?? 0,
     );
   }
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../state/app_state.dart';
+import '../utils/category_icons.dart';
 import '../utils/format.dart';
 import '../widgets/common.dart';
 
@@ -244,7 +245,13 @@ class DashboardScreen extends StatelessWidget {
           children: [
             Row(
               children: [
-                Expanded(child: Text(e.key)),
+                Icon(
+                  CategoryIcons.byKey(context.read<AppState>().iconKeyFor(e.key)),
+                  size: 16,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 8),
+                Expanded(child: Text(e.key, overflow: TextOverflow.ellipsis)),
                 Text(Fmt.currency(e.value, code: cur),
                     style: const TextStyle(fontWeight: FontWeight.w600)),
                 const SizedBox(width: 8),
