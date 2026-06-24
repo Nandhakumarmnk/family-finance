@@ -12,6 +12,7 @@ import 'emi_screen.dart';
 import 'expenses_screen.dart';
 import 'family_screen.dart';
 import 'master_screen.dart';
+import 'reminders_screen.dart';
 import 'reports_screen.dart';
 import 'salary_screen.dart';
 
@@ -57,12 +58,14 @@ class _HomeShellState extends State<HomeShell> {
                 ),
               ),
             ),
+          _reminderBell(context, state),
           PopupMenuButton<String>(
             icon: _avatar(state),
             onSelected: (v) => _onMenu(context, v),
             itemBuilder: (_) => [
               const PopupMenuItem(value: 'details', child: _MenuRow(Icons.person, 'My Details')),
               const PopupMenuItem(value: 'salary', child: _MenuRow(Icons.payments, 'Salary / Income')),
+              const PopupMenuItem(value: 'reminders', child: _MenuRow(Icons.notifications_active_outlined, 'Payment reminders')),
               const PopupMenuItem(value: 'activity', child: _MenuRow(Icons.history, 'Activity & changes')),
               const PopupMenuItem(value: 'export', child: _MenuRow(Icons.picture_as_pdf_outlined, 'Reports & export')),
               const PopupMenuItem(value: 'appearance', child: _MenuRow(Icons.palette_outlined, 'Appearance')),
@@ -90,6 +93,19 @@ class _HomeShellState extends State<HomeShell> {
     );
   }
 
+  /// Bell icon that opens the reminders screen, badged with the number of
+  /// reminders that are overdue or due soon.
+  Widget _reminderBell(BuildContext context, AppState state) {
+    final count = state.dueReminderCount;
+    final icon = IconButton(
+      tooltip: 'Payment reminders',
+      icon: const Icon(Icons.notifications_outlined),
+      onPressed: () => _push(context, const RemindersScreen()),
+    );
+    if (count == 0) return icon;
+    return Badge.count(count: count, child: icon);
+  }
+
   Widget _avatar(AppState state) {
     final url = state.profile?.photoUrl;
     if (url != null && url.isNotEmpty) {
@@ -110,6 +126,9 @@ class _HomeShellState extends State<HomeShell> {
         break;
       case 'salary':
         _push(context, const SalaryScreen());
+        break;
+      case 'reminders':
+        _push(context, const RemindersScreen());
         break;
       case 'activity':
         _push(context, const ActivityScreen());

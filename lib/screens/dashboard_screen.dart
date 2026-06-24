@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/reminder.dart';
 import '../state/app_state.dart';
 import '../utils/category_icons.dart';
 import '../utils/format.dart';
 import '../widgets/common.dart';
+import 'reminders_screen.dart';
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
@@ -93,6 +95,10 @@ class DashboardScreen extends StatelessWidget {
           const SizedBox(height: 8),
           if (target != null && target.spendingLimit > 0)
             _budgetBar(context, expense, target.spendingLimit, cur),
+          if (s.dueReminders.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            _remindersAlert(context, s, cur),
+          ],
           const SizedBox(height: 8),
           const SectionHeader('Spending by category'),
           if (breakdown.isEmpty)
@@ -195,6 +201,90 @@ class DashboardScreen extends StatelessWidget {
                   ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// A dashboard alert listing payments that are overdue or due soon. Tapping
+  /// it (or "View all") opens the full reminders screen.
+  Widget _remindersAlert(BuildContext context, AppState s, String cur) {
+    final theme = Theme.of(context);
+    final due = s.dueReminders;
+    final shown = due.take(3).toList();
+    final overdueCount =
+        due.where((r) => r.status == ReminderStatus.overdue).length;
+    final accent = overdueCount > 0 ? Colors.red : Colors.amber.shade800;
+
+    void open() => Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => const RemindersScreen()));
+
+    return Card(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: open,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.notifications_active, color: accent, size: 20),
+                  const SizedBox(width: 8),
+                  Text('Payments due',
+                      style: theme.textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.bold)),
+                  const Spacer(),
+                  Text('${due.length}',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                          color: accent, fontWeight: FontWeight.bold)),
+                ],
+              ),
+              const SizedBox(height: 8),
+              ...shown.map((r) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      children: [
+                        Icon(CategoryIcons.byKey(r.iconKey),
+                            size: 16, color: theme.colorScheme.onSurfaceVariant),
+                        const SizedBox(width: 8),
+                        Expanded(
+                            child: Text(r.title,
+                                overflow: TextOverflow.ellipsis)),
+                        Text(
+                          r.status == ReminderStatus.overdue
+                              ? 'Overdue'
+                              : r.status == ReminderStatus.dueToday
+                                  ? 'Today'
+                                  : 'In ${r.daysUntilDue}d',
+                          style: theme.textTheme.labelMedium?.copyWith(
+                              color: r.status == ReminderStatus.overdue
+                                  ? Colors.red
+                                  : theme.colorScheme.outline,
+                              fontWeight: FontWeight.w600),
+                        ),
+                        if (r.amount > 0) ...[
+                          const SizedBox(width: 10),
+                          Text(Fmt.currency(r.amount, code: cur),
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w600)),
+                        ],
+                      ],
+                    ),
+                  )),
+              if (due.length > shown.length) ...[
+                const SizedBox(height: 4),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: open,
+                    child: Text('View all ${due.length}'),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }

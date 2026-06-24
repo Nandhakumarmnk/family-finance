@@ -6,6 +6,7 @@ import '../models/emi.dart';
 import '../models/expense.dart';
 import '../models/family_ledger.dart';
 import '../models/member.dart';
+import '../models/reminder.dart';
 import '../models/salary.dart';
 import '../models/target.dart';
 import '../models/user_profile.dart';
@@ -57,6 +58,39 @@ class AppState extends ChangeNotifier {
   List<WalletEntry> get wallet => _family?.wallet ?? const [];
   List<Activity> get activities => _personal?.activities ?? const [];
   double get walletBalance => _family?.walletBalance ?? 0;
+
+  // --- payment reminders -----------------------------------------------------
+  List<Reminder> get reminders => _personal?.reminders ?? const [];
+
+  /// Active reminders, soonest-due first; paused ones sink to the bottom.
+  List<Reminder> get remindersSorted {
+    final list = [...reminders];
+    list.sort((a, b) {
+      if (a.active != b.active) return a.active ? -1 : 1;
+      return a.dueDate.compareTo(b.dueDate);
+    });
+    return list;
+  }
+
+  /// Reminders past their due date (active only), most overdue first.
+  List<Reminder> get overdueReminders =>
+      (reminders.where((r) => r.status == ReminderStatus.overdue).toList())
+        ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
+
+  /// Active reminders that need attention now — overdue or within the
+  /// "due soon" window — soonest-due first. Drives the dashboard alert.
+  List<Reminder> get dueReminders =>
+      (reminders.where((r) => r.needsAttention).toList())
+        ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
+
+  /// Count of reminders needing attention (badge value).
+  int get dueReminderCount => reminders.where((r) => r.needsAttention).length;
+
+  /// Total monthly-equivalent commitment across active reminders (rough: only
+  /// counts monthly ones, used for an at-a-glance figure).
+  double get reminderMonthlyOutgo => reminders
+      .where((r) => r.active && r.recurrence == Recurrence.monthly)
+      .fold(0.0, (a, r) => a + r.amount);
 
   /// Editable expense categories (the "category master").
   List<Category> get categories => _personal?.categories ?? const [];
@@ -248,6 +282,104 @@ class AppState extends ChangeNotifier {
     if (_personal == null) return;
     _personal!.categories.removeWhere((c) => c.name == name);
     await _persistPersonal();
+  }
+
+  /// Add [name] to the category master if it isn't there yet, with [iconKey].
+  /// Silent + non-persisting — the caller decides when to save. Used when a
+  /// reminder books an expense so its category stays consistent in the master.
+  void _ensureCategory(String name, String iconKey) {
+    if (_personal == null || name.trim().isEmpty) return;
+    final exists =
+        _personal!.categories.any((c) => c.name.toLowerCase() == name.toLowerCase());
+    if (!exists) _personal!.categories.add(Category(name: name, iconKey: iconKey));
+  }
+
+  // --- payment reminders -----------------------------------------------------
+  Future<void> addReminder(Reminder r) async {
+    if (_personal == null) return;
+    _personal!.reminders.add(r);
+    _logActivity('Added', 'Reminder', r.title, r.amount);
+    await _persistPersonal();
+    _celebrate('Reminder added');
+  }
+
+  Future<void> updateReminder(Reminder r) async {
+    if (_personal == null) return;
+    final idx = _personal!.reminders.indexWhere((e) => e.id == r.id);
+    if (idx < 0) return;
+    _personal!.reminders[idx] = r;
+    _logActivity('Updated', 'Reminder', r.title, r.amount);
+    await _persistPersonal();
+    _celebrate('Reminder updated');
+  }
+
+  Future<void> deleteReminder(String id) async {
+    if (_personal == null) return;
+    final idx = _personal!.reminders.indexWhere((e) => e.id == id);
+    if (idx >= 0) {
+      final r = _personal!.reminders[idx];
+      _personal!.reminders.removeAt(idx);
+      _logActivity('Deleted', 'Reminder', r.title, r.amount);
+    }
+    await _persistPersonal();
+  }
+
+  /// Pause / resume a reminder (paused ones stop raising alerts).
+  Future<void> setReminderActive(String id, bool active) async {
+    if (_personal == null) return;
+    final idx = _personal!.reminders.indexWhere((e) => e.id == id);
+    if (idx < 0) return;
+    _personal!.reminders[idx].active = active;
+    await _persistPersonal();
+    _celebrate(active ? 'Reminder resumed' : 'Reminder paused');
+  }
+
+  /// Mark a reminder paid. Rolls a recurring reminder forward to its next due
+  /// date (and closes a one-time one), and — when [addExpense] is true and the
+  /// amount is known — books a matching expense in the reminder's category,
+  /// mirroring it to the family ledger just like a normal expense.
+  Future<void> markReminderPaid(String id, {bool addExpense = true}) async {
+    if (_personal == null) return;
+    final idx = _personal!.reminders.indexWhere((e) => e.id == id);
+    if (idx < 0) return;
+    final r = _personal!.reminders[idx];
+    final now = DateTime.now();
+
+    var familyChanged = false;
+    if (addExpense && r.amount > 0) {
+      _ensureCategory(r.expenseCategory, r.iconKey);
+      final expense = Expense(
+        id: 'rem_${r.id}_${now.microsecondsSinceEpoch}',
+        date: now,
+        category: r.expenseCategory,
+        amount: r.amount,
+        paymentMode: 'UPI',
+        notes: r.title,
+      );
+      _personal!.expenses.add(expense);
+      familyChanged = _mirrorToFamily(
+        id: expense.id,
+        date: expense.date,
+        type: 'expense',
+        category: expense.category,
+        amount: expense.amount,
+        notes: expense.notes,
+      );
+    }
+
+    r.lastPaidDate = now;
+    if (r.recurrence == Recurrence.none) {
+      r.active = false; // one-time reminder is done
+    } else {
+      r.dueDate = r.nextOccurrenceAfter(now);
+    }
+    _logActivity('Paid', 'Reminder', r.title, r.amount);
+
+    if (familyChanged) await _persistFamily();
+    await _persistPersonal();
+    _celebrate(addExpense && r.amount > 0
+        ? 'Marked paid · expense added'
+        : 'Marked paid');
   }
 
   // --- salary ----------------------------------------------------------------

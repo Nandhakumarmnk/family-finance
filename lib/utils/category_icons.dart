@@ -13,6 +13,7 @@ class CategoryIcons {
     'grocery': Icons.local_grocery_store,
     'home': Icons.home,
     'bolt': Icons.bolt,
+    'receipt': Icons.receipt_long,
     'water': Icons.water_drop,
     'wifi': Icons.wifi,
     'phone': Icons.smartphone,

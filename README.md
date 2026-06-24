@@ -19,6 +19,12 @@ wallet"** that multiple users can contribute to.
   the family wallet.
 - 🏦 **EMIs / Loans** — track tenure, paid vs **remaining EMIs**, remaining
   amount, next due date and payoff date; record monthly payments.
+- 🔔 **Payment reminders** — recurring (or one-off) reminders for **EMIs,
+  repayments, groceries, bills, recharges and other mandatory needs**. Each has
+  a due date and cadence (weekly / monthly / quarterly / yearly); overdue and
+  due-soon items surface on the Dashboard and behind a badged bell, and
+  "mark paid" rolls a recurring reminder to its next date (optionally booking
+  the matching expense). In-app alerts — works on Android, iOS and Web.
 - 📊 **Reports** — **month-wise** and **year-wise** summaries, income-vs-expense
   charts, category pie chart, and **savings/spending targets** with
   planned-vs-actual progress.
@@ -32,7 +38,7 @@ A `FamilyFinance` folder is created in your Drive containing:
 
 | File                         | Sheets                                                   |
 |------------------------------|----------------------------------------------------------|
-| `personal_<email>.xlsx`      | Profile, Salary, Expenses, EMIs, Targets, Activity       |
+| `personal_<email>.xlsx`      | Profile, Salary, Expenses, EMIs, Targets, Reminders, Activity |
 | `family_<familyId>.xlsx`     | Members, Wallet, FamilyLedger, Deleted *(shared)*        |
 
 Family members share **one** family workbook by using the **same Family ID**
@@ -173,6 +179,7 @@ lib/
 ├── models/                    # data classes (one per Excel sheet)
 │   ├── user_profile.dart  salary.dart  expense.dart
 │   ├── emi.dart  target.dart  wallet_entry.dart  member.dart
+│   ├── reminder.dart  category.dart  activity.dart  family_ledger.dart
 ├── services/
 │   ├── auth_service.dart       # Google Sign-In + authed client
 │   ├── drive_service.dart      # Drive v3: folder/file/upload/share
@@ -186,7 +193,7 @@ lib/
     ├── login_screen.dart       dashboard_screen.dart   home_shell.dart
     ├── add_details_screen.dart salary_screen.dart      expenses_screen.dart
     ├── emi_screen.dart         reports_screen.dart      family_wallet_screen.dart
-    └── master_screen.dart
+    ├── reminders_screen.dart   master_screen.dart
 ```
 
 ## Usage flow
@@ -205,6 +212,9 @@ lib/
 - Saves are written to Drive after each change. For heavy use you may want to
   batch writes or add offline caching (e.g. `shared_preferences`/local file)
   and a sync indicator.
-- Possible future features: recurring expense reminders / EMI due
-  notifications, multi-currency conversion, budget rollover, CSV export, and
-  per-member spending analytics on the family workbook.
+- Recurring **payment reminders** are now built in (in-app alerts on the
+  Dashboard + a badged bell). A natural next step is delivering them as **device
+  push notifications** (e.g. `flutter_local_notifications`), which needs a
+  one-time native setup and is Android/iOS only.
+- Possible future features: multi-currency conversion, budget rollover, CSV
+  export, and per-member spending analytics on the family workbook.

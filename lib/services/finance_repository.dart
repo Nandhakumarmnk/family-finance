@@ -6,6 +6,7 @@ import '../models/emi.dart';
 import '../models/expense.dart';
 import '../models/family_ledger.dart';
 import '../models/member.dart';
+import '../models/reminder.dart';
 import '../models/salary.dart';
 import '../models/target.dart';
 import '../models/user_profile.dart';
@@ -25,6 +26,7 @@ import 'excel_codec.dart';
 ///   - Expenses
 ///   - EMIs
 ///   - Targets
+///   - Reminders
 /// family_<familyId>.xlsx   (shared with family members on Drive)
 ///   - Members
 ///   - Wallet
@@ -43,6 +45,7 @@ class FinanceRepository {
   static const _sWallet = 'Wallet';
   static const _sActivity = 'Activity';
   static const _sCategories = 'Categories';
+  static const _sReminders = 'Reminders';
   static const _sFamilyLedger = 'FamilyLedger';
   static const _sTombstones = 'Deleted';
   static const _sInfo = 'Info'; // key/value metadata (e.g. shared family name)
@@ -75,6 +78,7 @@ class FinanceRepository {
         targets: [],
         activities: [],
         categories: Category.defaults(),
+        reminders: [],
       );
       data.fileId = await _savePersonal(data, folderId: folderId, name: name);
       return data;
@@ -115,6 +119,9 @@ class FinanceRepository {
       // Pre-categories workbooks have no Categories sheet — seed the defaults
       // so the picker is never empty (persisted on the next save).
       categories: cats.isEmpty ? Category.defaults() : cats,
+      // Pre-reminders workbooks simply have no Reminders sheet → empty list.
+      reminders:
+          ExcelCodec.dataRows(wb, _sReminders).map(Reminder.fromRow).toList(),
     );
   }
 
@@ -137,6 +144,7 @@ class FinanceRepository {
       _sTargets: [Target.header, ...data.targets.map((e) => e.toRow())],
       _sActivity: [Activity.header, ...data.activities.map((e) => e.toRow())],
       _sCategories: [Category.header, ...data.categories.map((e) => e.toRow())],
+      _sReminders: [Reminder.header, ...data.reminders.map((e) => e.toRow())],
     };
     final bytes = ExcelCodec.encode(sheets);
     return _drive.upsertXlsx(name, bytes, parentId: folderId);
@@ -349,6 +357,7 @@ class PersonalData {
   final List<Target> targets;
   final List<Activity> activities;
   final List<Category> categories;
+  final List<Reminder> reminders;
 
   PersonalData({
     required this.fileId,
@@ -359,6 +368,7 @@ class PersonalData {
     required this.targets,
     required this.activities,
     required this.categories,
+    required this.reminders,
   });
 }
 
