@@ -15,6 +15,7 @@ class PinController extends ChangeNotifier {
   static const _kFails = 'pin_fails';
   static const _kLockUntil = 'pin_lock_until';
   static const _kLockouts = 'pin_lockouts';
+  static const _kBiometric = 'pin_biometric';
 
   /// Wrong attempts allowed before the pad locks for a cooldown.
   static const int maxAttempts = 5;
@@ -26,9 +27,14 @@ class PinController extends ChangeNotifier {
   int _failed = 0; // consecutive wrong attempts in the current round
   int _lockouts = 0; // how many times we've locked out (escalates cooldown)
   DateTime? _lockedUntil;
+  bool _biometric = false;
 
   bool get loaded => _loaded;
   bool get isSet => _hash != null;
+
+  /// Whether the user opted into fingerprint / face unlock (only meaningful
+  /// when a PIN is also set, since the PIN is the fallback).
+  bool get biometricEnabled => isSet && _biometric;
 
   /// True when a PIN is set and the app is currently locked.
   bool get isLocked => isSet && _locked;
@@ -56,6 +62,7 @@ class PinController extends ChangeNotifier {
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
     _hash = prefs.getString(_kHash);
+    _biometric = prefs.getBool(_kBiometric) ?? false;
     _failed = prefs.getInt(_kFails) ?? 0;
     _lockouts = prefs.getInt(_kLockouts) ?? 0;
     final until = prefs.getInt(_kLockUntil);
@@ -75,6 +82,23 @@ class PinController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Opt in/out of fingerprint / face unlock.
+  Future<void> setBiometric(bool on) async {
+    final prefs = await SharedPreferences.getInstance();
+    _biometric = on;
+    await prefs.setBool(_kBiometric, on);
+    notifyListeners();
+  }
+
+  /// Unlock after a successful OS biometric scan (verified by the caller via
+  /// [BiometricService]). Only meaningful when a PIN is set.
+  void unlockViaBiometric() {
+    if (!isSet) return;
+    _locked = false;
+    _unlockedReset();
+    notifyListeners();
+  }
+
   /// Turn the PIN lock off (from settings).
   Future<void> removePin() => clearAll();
 
@@ -87,10 +111,12 @@ class PinController extends ChangeNotifier {
     await prefs.remove(_kFails);
     await prefs.remove(_kLockUntil);
     await prefs.remove(_kLockouts);
+    await prefs.remove(_kBiometric);
     _hash = null;
     _failed = 0;
     _lockouts = 0;
     _lockedUntil = null;
+    _biometric = false;
     _locked = false;
     notifyListeners();
   }

@@ -133,6 +133,37 @@ You need OAuth credentials so the app can sign in and access Drive.
 
 ---
 
+## Biometric unlock (fingerprint / face)
+
+The app lock supports an optional **fingerprint / face unlock** (toggle it on
+under **menu → Appearance → App lock**, after a PIN is set; the PIN is always
+the fallback). It uses the `local_auth` plugin, which needs a little native
+setup in the generated platform folders:
+
+**Android** (`android/app/src/main/...`)
+- Make `MainActivity` extend `FlutterFragmentActivity` (not `FlutterActivity`),
+  e.g. in `MainActivity.kt`:
+  ```kotlin
+  import io.flutter.embedding.android.FlutterFragmentActivity
+  class MainActivity : FlutterFragmentActivity()
+  ```
+- Add the permission to `AndroidManifest.xml`:
+  ```xml
+  <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
+  ```
+
+**iOS** — add to `ios/Runner/Info.plist`:
+```xml
+<key>NSFaceIDUsageDescription</key>
+<string>Unlock Family Finance with Face ID</string>
+```
+
+After adding the dependency, run `flutter pub get`. On devices without
+biometric hardware (or on web) the toggle simply doesn't appear and the PIN is
+used as usual.
+
+---
+
 ## Project structure
 
 ```

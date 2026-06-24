@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../services/biometric_service.dart';
 import '../state/app_state.dart';
 import '../state/pin_controller.dart';
 
@@ -17,6 +18,7 @@ class PinLockScreen extends StatefulWidget {
 }
 
 class _PinLockScreenState extends State<PinLockScreen> {
+  final BiometricService _bio = BiometricService();
   String _entry = '';
   String? _error;
   Timer? _ticker;
@@ -29,12 +31,22 @@ class _PinLockScreenState extends State<PinLockScreen> {
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() {});
     });
+    // Offer fingerprint / face unlock immediately if the user enabled it.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _promptBiometric());
   }
 
   @override
   void dispose() {
     _ticker?.cancel();
     super.dispose();
+  }
+
+  Future<void> _promptBiometric() async {
+    if (!mounted) return;
+    final pin = context.read<PinController>();
+    if (!pin.biometricEnabled || pin.isLockedOut) return;
+    final ok = await _bio.authenticate();
+    if (ok && mounted) context.read<PinController>().unlockViaBiometric();
   }
 
   void _onChanged(String value) {
@@ -112,6 +124,12 @@ class _PinLockScreenState extends State<PinLockScreen> {
           onChanged: _onChanged,
           footer: Column(
             children: [
+              if (pin.biometricEnabled && !lockedOut)
+                OutlinedButton.icon(
+                  onPressed: _promptBiometric,
+                  icon: const Icon(Icons.fingerprint),
+                  label: const Text('Use fingerprint / face'),
+                ),
               TextButton.icon(
                 onPressed: _reset,
                 icon: const Icon(Icons.restart_alt, size: 18),
