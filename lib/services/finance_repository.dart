@@ -43,6 +43,7 @@ class FinanceRepository {
   static const _sActivity = 'Activity';
   static const _sFamilyLedger = 'FamilyLedger';
   static const _sTombstones = 'Deleted';
+  static const _sInfo = 'Info'; // key/value metadata (e.g. shared family name)
 
   String _personalFileName(String email) =>
       'personal_${_sanitize(email)}.xlsx';
@@ -172,10 +173,14 @@ class FinanceRepository {
 
     final bytes = await _drive.downloadBytes(fileId);
     final wb = ExcelCodec.decode(bytes);
+    // The shared workbook is the source of truth for the family name once set,
+    // so every member shows the same label; fall back to the caller's name
+    // (from the personal profile) for workbooks created before this existed.
+    final storedName = _readFamilyName(wb);
     return FamilyData(
       fileId: fileId,
       familyId: familyId,
-      familyName: familyName,
+      familyName: storedName.isEmpty ? familyName : storedName,
       members: ExcelCodec.dataRows(wb, _sMembers).map(Member.fromRow).toList(),
       wallet:
           ExcelCodec.dataRows(wb, _sWallet).map(WalletEntry.fromRow).toList(),
@@ -192,11 +197,15 @@ class FinanceRepository {
   /// entries another member added (the bug behind "common expenses don't show
   /// the other account's data"). Writes back to the same file id; never forks
   /// a private copy.
-  Future<void> saveFamily(FamilyData data) async {
+  ///
+  /// [overwriteName] is set only by an explicit rename: it keeps the local
+  /// family name instead of adopting the remote one during the merge, so the
+  /// rename wins. Routine saves leave it false and preserve the shared name.
+  Future<void> saveFamily(FamilyData data, {bool overwriteName = false}) async {
     if (data.fileId.isNotEmpty) {
       try {
         final remote = ExcelCodec.decode(await _drive.downloadBytes(data.fileId));
-        _mergeRemoteIntoFamily(data, remote);
+        _mergeRemoteIntoFamily(data, remote, keepLocalName: overwriteName);
       } catch (_) {
         // Remote unreadable (offline / just deleted) — write what we have.
       }
@@ -228,8 +237,22 @@ class FinanceRepository {
         const ['id'],
         ...data.tombstones.map((id) => [id]),
       ],
+      _sInfo: [
+        const ['key', 'value'],
+        ['familyName', data.familyName],
+      ],
     };
     return ExcelCodec.encode(sheets);
+  }
+
+  /// Read the shared family name from the workbook's Info sheet ('' if absent).
+  String _readFamilyName(Map<String, List<List<dynamic>>> wb) {
+    for (final r in ExcelCodec.dataRows(wb, _sInfo)) {
+      if (r.isNotEmpty && '${r.first}'.trim() == 'familyName') {
+        return r.length > 1 ? '${r[1]}'.trim() : '';
+      }
+    }
+    return '';
   }
 
   Set<String> _readTombstones(Map<String, List<List<dynamic>>> wb) =>
@@ -246,7 +269,15 @@ class FinanceRepository {
   /// This keeps every member's additions while still letting deletes
   /// propagate across accounts.
   void _mergeRemoteIntoFamily(
-      FamilyData data, Map<String, List<List<dynamic>>> wb) {
+      FamilyData data, Map<String, List<List<dynamic>>> wb,
+      {bool keepLocalName = false}) {
+    // Unless this is an explicit rename, adopt the shared name from the remote
+    // copy so a routine save never clobbers another member's rename.
+    if (!keepLocalName) {
+      final remoteName = _readFamilyName(wb);
+      if (remoteName.isNotEmpty) data.familyName = remoteName;
+    }
+
     data.tombstones.addAll(_readTombstones(wb));
     final dead = data.tombstones;
 
@@ -294,6 +325,9 @@ class FinanceRepository {
 
   /// A web link to open a stored file (e.g. the personal workbook in Sheets).
   Future<String?> fileWebLink(String fileId) => _drive.webLink(fileId);
+
+  /// Move a workbook to the Drive trash (used by "reset & start fresh").
+  Future<void> trashFile(String fileId) => _drive.trashFile(fileId);
 }
 
 /// In-memory contents of the personal workbook.
@@ -321,7 +355,7 @@ class PersonalData {
 class FamilyData {
   String fileId;
   final String familyId;
-  final String familyName;
+  String familyName;
   final List<Member> members;
   final List<WalletEntry> wallet;
   final List<FamilyLedgerEntry> ledger;

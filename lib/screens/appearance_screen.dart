@@ -204,18 +204,23 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('Reset & start fresh?'),
         content: const Text(
-          'This removes the PIN from this device and signs you out, so you can '
-          'sign in again from scratch.\n\n'
-          'Your finance data stays safe in Google Drive — nothing is deleted '
-          'there.',
+          'This clears everything on this device and starts over:\n\n'
+          '•  Removes the app PIN and signs you out\n'
+          '•  Moves your data on Drive to Trash — your personal workbook and '
+          '(if you own it) the shared family workbook, which also clears it for '
+          'other members\n\n'
+          'Trashed files can be restored from Google Drive for ~30 days. This '
+          "can't be undone in the app.",
         ),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
               child: const Text('Cancel')),
           FilledButton(
+              style: FilledButton.styleFrom(
+                  backgroundColor: Theme.of(ctx).colorScheme.error),
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Reset')),
+              child: const Text('Reset & delete')),
         ],
       ),
     );
@@ -224,7 +229,7 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
     final pin = context.read<PinController>();
     final app = context.read<AppState>();
     navigator.popUntil((route) => route.isFirst); // leave the settings page
-    await app.signOut();
+    await app.resetAndWipe();
     await pin.clearAll();
   }
 }

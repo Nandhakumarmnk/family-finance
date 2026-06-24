@@ -102,6 +102,34 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Full "reset & start fresh": move this account's workbooks (personal +
+  /// shared family) to the Drive trash, then sign out. The Drive deletes are
+  /// best-effort and per-file — a member who doesn't own the shared family file
+  /// simply can't trash it, so their reset clears only their own personal data
+  /// while the owner's reset clears the family file for the whole household.
+  /// Callers also clear the local PIN afterwards.
+  Future<void> resetAndWipe() async {
+    final repo = _repo;
+    final personalId = _personal?.fileId;
+    final familyId = _family?.fileId;
+    _setBusy(true);
+    try {
+      if (repo != null && personalId != null && personalId.isNotEmpty) {
+        try {
+          await repo.trashFile(personalId);
+        } catch (_) {/* best-effort */}
+      }
+      if (repo != null && familyId != null && familyId.isNotEmpty) {
+        try {
+          await repo.trashFile(familyId);
+        } catch (_) {/* not the owner, or already gone */}
+      }
+    } finally {
+      _setBusy(false);
+    }
+    await signOut();
+  }
+
   Future<void> _onSignedIn() async {
     final account = _auth.account!;
     final client = await _auth.authenticatedClient();
@@ -153,6 +181,11 @@ class AppState extends ChangeNotifier {
         phone: p.phone,
       ),
     );
+    // Adopt the shared family name (the workbook is the source of truth) so the
+    // label is consistent for every member, including in "My Details".
+    if (_family!.familyName.isNotEmpty) {
+      p.familyName = _family!.familyName;
+    }
   }
 
   // --- profile / details -----------------------------------------------------
@@ -292,12 +325,27 @@ class AppState extends ChangeNotifier {
     final p = _personal!.profile;
     p.familyId = familyId.trim();
     p.familyName = familyName.trim();
-    await _persistPersonal();
+    // Load first: when joining an existing family this adopts its shared name
+    // into the profile, so we persist the correct name rather than the typed one.
     await _loadFamily();
+    await _persistPersonal();
     // One-time backfill: push this user's existing income/expenses into the
     // shared ledger so they show up in the family report immediately.
     if (_backfillFamilyLedger()) await _persistFamily();
     notifyListeners();
+  }
+
+  /// Rename the family without changing the Family ID (so the shared workbook
+  /// and members stay the same). The new name is written to the shared workbook
+  /// so every member sees it, and mirrored into this user's profile.
+  Future<void> renameFamily(String newName) async {
+    final name = newName.trim();
+    if (name.isEmpty || _personal == null) return;
+    _personal!.profile.familyName = name;
+    _family?.familyName = name; // so the dashboard / wallet headers update now
+    if (_family != null) await _persistFamily(overwriteName: true);
+    await _persistPersonal();
+    _celebrate('Family name updated');
   }
 
   /// Add any personal income/expenses missing from the shared family ledger.
@@ -602,12 +650,12 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> _persistFamily() async {
+  Future<void> _persistFamily({bool overwriteName = false}) async {
     error = null;
     notifyListeners();
     _setBusy(true);
     try {
-      await _repo!.saveFamily(_family!);
+      await _repo!.saveFamily(_family!, overwriteName: overwriteName);
     } catch (e) {
       error = 'Could not save family workbook: $e';
     } finally {

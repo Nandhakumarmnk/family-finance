@@ -53,9 +53,16 @@ class _AddDetailsScreenState extends State<AddDetailsScreen> {
       currencyCode: _currency,
     );
     final fid = _familyId.text.trim();
-    if (fid.isNotEmpty && fid != s.profile!.familyId ||
-        (fid.isNotEmpty && !s.inFamily)) {
-      await s.createOrJoinFamily(fid, _familyName.text.trim());
+    final fname = _familyName.text.trim();
+    final idChanged = fid.isNotEmpty && fid != s.profile!.familyId;
+    final joiningFirstTime = fid.isNotEmpty && !s.inFamily;
+    if (idChanged || joiningFirstTime) {
+      await s.createOrJoinFamily(fid, fname);
+    } else if (s.inFamily &&
+        fname.isNotEmpty &&
+        fname != (s.family?.familyName ?? s.profile!.familyName)) {
+      // Same Family ID, only the name changed — just rename in place.
+      await s.renameFamily(fname);
     }
     if (mounted) {
       ScaffoldMessenger.of(context)

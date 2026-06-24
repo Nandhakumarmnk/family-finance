@@ -168,6 +168,14 @@ class DriveService {
     return existingId;
   }
 
+  /// Move a file to the Drive trash (recoverable for ~30 days). Used by
+  /// "reset & start fresh" to clear the app's workbooks. Only the file's owner
+  /// can trash it, so this throws for a member trying to trash the owner's
+  /// shared workbook — callers treat that as best-effort.
+  Future<void> trashFile(String fileId) => _run('trashFile', () async {
+        await _api.files.update(drive.File()..trashed = true, fileId);
+      });
+
   /// Share a file with another user (used to invite family members to the
   /// shared family workbook). [role] is typically "writer" or "reader".
   Future<void> shareWith(
