@@ -45,7 +45,9 @@ class DashboardScreen extends StatelessWidget {
             physics: const NeverScrollableScrollPhysics(),
             mainAxisSpacing: 12,
             crossAxisSpacing: 12,
-            childAspectRatio: 1.4,
+            // Taller cards (was 1.4) so labels like "Family wallet" / "EMI
+            // remaining" never clip at the bottom, even at larger font scales.
+            childAspectRatio: 1.05,
             children: [
               StatCard(
                 label: 'Income (${Fmt.monthShort(m)})',
