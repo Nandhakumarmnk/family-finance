@@ -32,9 +32,11 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Appearance & security')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
+      body: ResponsiveCenter(
+        maxWidth: 640,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
           const SectionHeader('App lock'),
           Card(
             child: Column(
@@ -175,6 +177,7 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
             ),
           ),
         ],
+        ),
       ),
     );
   }

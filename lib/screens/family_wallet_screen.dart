@@ -29,9 +29,11 @@ class FamilyWalletScreen extends StatelessWidget {
         icon: const Icon(Icons.add),
         label: const Text('Wallet entry'),
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
-        children: [
+      body: ResponsiveCenter(
+        maxWidth: 720,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
+          children: [
           _balanceCard(context, s, balance, cur),
           const SizedBox(height: 12),
           Row(children: [
@@ -50,6 +52,7 @@ class FamilyWalletScreen extends StatelessWidget {
           else
             ...entries.map((e) => _entryTile(context, e, cur)),
         ],
+        ),
       ),
     );
   }

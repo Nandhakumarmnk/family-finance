@@ -2,6 +2,27 @@ import 'package:flutter/material.dart';
 
 import '../utils/format.dart';
 
+/// Constrains page content to a comfortable max width and centres it. On a
+/// phone the screen is narrower than [maxWidth] so it's a no-op (full-bleed);
+/// on web/desktop it keeps forms and lists from stretching edge-to-edge.
+/// Wrap a screen's scrollable body (ListView/Column) with this.
+class ResponsiveCenter extends StatelessWidget {
+  final double maxWidth;
+  final Widget child;
+  const ResponsiveCenter({super.key, this.maxWidth = 640, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: maxWidth),
+        child: child,
+      ),
+    );
+  }
+}
+
 /// A tappable field that opens a date picker. Shared across forms.
 class DatePickerField extends StatelessWidget {
   final DateTime date;

@@ -36,7 +36,9 @@ class RemindersScreen extends StatelessWidget {
         icon: const Icon(Icons.add_alert_outlined),
         label: const Text('Add reminder'),
       ),
-      body: all.isEmpty
+      body: ResponsiveCenter(
+        maxWidth: 720,
+        child: all.isEmpty
           ? _EmptyReminders(onPick: (k) => _openForm(context, kind: k))
           : ListView(
               padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
@@ -49,6 +51,7 @@ class RemindersScreen extends StatelessWidget {
                 _group(context, 'Paused', paused, cur, Colors.grey),
               ],
             ),
+      ),
     );
   }
 

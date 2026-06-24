@@ -42,8 +42,10 @@ class _ActivityScreenState extends State<ActivityScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Activity & changes')),
-      body: Column(
-        children: [
+      body: ResponsiveCenter(
+        maxWidth: 720,
+        child: Column(
+          children: [
           SizedBox(
             height: 52,
             child: ListView.separated(
@@ -75,6 +77,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                   ),
           ),
         ],
+        ),
       ),
     );
   }

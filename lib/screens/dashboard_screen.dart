@@ -26,9 +26,11 @@ class DashboardScreen extends StatelessWidget {
 
     return RefreshIndicator(
       onRefresh: () async => context.read<AppState>().init(),
-      child: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
+      child: ResponsiveCenter(
+        maxWidth: 760,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
           _greeting(context, s),
           const SizedBox(height: 12),
           PeriodPicker(
@@ -121,6 +123,7 @@ class DashboardScreen extends StatelessWidget {
               ),
             ),
         ],
+        ),
       ),
     );
   }

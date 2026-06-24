@@ -27,7 +27,9 @@ class EmiScreen extends StatelessWidget {
         icon: const Icon(Icons.add),
         label: const Text('Add EMI'),
       ),
-      body: items.isEmpty
+      body: ResponsiveCenter(
+        maxWidth: 720,
+        child: items.isEmpty
           ? const EmptyState(
               icon: Icons.account_balance_outlined,
               message: 'No loans/EMIs tracked yet.\nTap “Add EMI”.')
@@ -39,6 +41,7 @@ class EmiScreen extends StatelessWidget {
                 ...items.map((e) => _emiCard(context, e, cur)),
               ],
             ),
+      ),
     );
   }
 

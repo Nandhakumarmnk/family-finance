@@ -25,7 +25,9 @@ class CommonExpensesScreen extends StatelessWidget {
     final byMember = s.familySpendByMember(y, m);
     final entries = s.familyEntriesForMonth(y, m);
 
-    return ListView(
+    return ResponsiveCenter(
+      maxWidth: 720,
+      child: ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
       children: [
         PeriodPicker(
@@ -92,6 +94,7 @@ class CommonExpensesScreen extends StatelessWidget {
         else
           ...entries.map((e) => _entryTile(context, e, cur)),
       ],
+      ),
     );
   }
 

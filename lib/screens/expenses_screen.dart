@@ -30,8 +30,10 @@ class ExpensesScreen extends StatelessWidget {
         icon: const Icon(Icons.add),
         label: const Text('Add expense'),
       ),
-      body: Column(
-        children: [
+      body: ResponsiveCenter(
+        maxWidth: 720,
+        child: Column(
+          children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
             child: PeriodPicker(
@@ -70,6 +72,7 @@ class ExpensesScreen extends StatelessWidget {
                   ),
           ),
         ],
+        ),
       ),
     );
   }

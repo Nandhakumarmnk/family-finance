@@ -63,9 +63,11 @@ class _ReportsExportScreenState extends State<ReportsExportScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Reports & export')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
+      body: ResponsiveCenter(
+        maxWidth: 640,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
           const SectionHeader('Period'),
           SegmentedButton<_Period>(
             segments: const [
@@ -140,6 +142,7 @@ class _ReportsExportScreenState extends State<ReportsExportScreen> {
             onTap: () => _open(_apkUrl, 'No download link configured yet'),
           ),
         ],
+        ),
       ),
     );
   }

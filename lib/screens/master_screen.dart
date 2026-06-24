@@ -29,9 +29,11 @@ class MasterScreen extends StatelessWidget {
               label: const Text('Add user'),
             )
           : null,
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
-        children: [
+      body: ResponsiveCenter(
+        maxWidth: 720,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
+          children: [
           if (s.inFamily) ...[
             _familyCard(context, s),
             const SizedBox(height: 8),
@@ -58,6 +60,7 @@ class MasterScreen extends StatelessWidget {
           else
             ...s.categories.map((c) => _categoryTile(context, s, c)),
         ],
+        ),
       ),
     );
   }

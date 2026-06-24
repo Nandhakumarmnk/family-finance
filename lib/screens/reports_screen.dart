@@ -50,7 +50,9 @@ class _MonthlyReport extends StatelessWidget {
     final target = s.targetFor(y, m);
     final breakdown = s.categoryBreakdown(y, m);
 
-    return ListView(
+    return ResponsiveCenter(
+      maxWidth: 760,
+      child: ListView(
       padding: const EdgeInsets.all(16),
       children: [
         PeriodPicker(
@@ -86,6 +88,7 @@ class _MonthlyReport extends StatelessWidget {
         else
           Card(child: Padding(padding: const EdgeInsets.all(16), child: _CategoryPie(data: breakdown, currency: cur))),
       ],
+      ),
     );
   }
 
@@ -179,7 +182,9 @@ class _YearlyReport extends StatelessWidget {
     final totalExp = s.expenseForYear(y);
     final totalInc = s.incomeForYear(y);
 
-    return ListView(
+    return ResponsiveCenter(
+      maxWidth: 760,
+      child: ListView(
       padding: const EdgeInsets.all(16),
       children: [
         PeriodPicker(
@@ -209,6 +214,7 @@ class _YearlyReport extends StatelessWidget {
         const SizedBox(height: 8),
         _legend(context),
       ],
+      ),
     );
   }
 

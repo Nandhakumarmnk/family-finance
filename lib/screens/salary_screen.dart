@@ -23,7 +23,9 @@ class SalaryScreen extends StatelessWidget {
         icon: const Icon(Icons.add),
         label: const Text('Add income'),
       ),
-      body: items.isEmpty
+      body: ResponsiveCenter(
+        maxWidth: 720,
+        child: items.isEmpty
           ? const EmptyState(
               icon: Icons.payments_outlined,
               message: 'No income recorded yet.\nTap “Add income” to start.')
@@ -58,6 +60,7 @@ class SalaryScreen extends StatelessWidget {
                 );
               },
             ),
+      ),
     );
   }
 

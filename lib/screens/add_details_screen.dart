@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../state/app_state.dart';
 import '../utils/format.dart';
+import '../widgets/common.dart';
 
 /// "Add Details" — edit the signed-in user's profile and link/create a family.
 class AddDetailsScreen extends StatefulWidget {
@@ -77,9 +78,11 @@ class _AddDetailsScreenState extends State<AddDetailsScreen> {
     final p = s.profile!;
     return Scaffold(
       appBar: AppBar(title: const Text('My Details')),
-      body: Form(
-        key: _form,
-        child: ListView(
+      body: ResponsiveCenter(
+        maxWidth: 560,
+        child: Form(
+          key: _form,
+          child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
             Center(
@@ -150,6 +153,7 @@ class _AddDetailsScreenState extends State<AddDetailsScreen> {
               label: const Text('Save details'),
             ),
           ],
+        ),
         ),
       ),
     );
