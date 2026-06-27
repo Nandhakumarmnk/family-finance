@@ -1,0 +1,40 @@
+rules_version = '2';
+
+// Security rules for Family Finance's free Firestore backend.
+//
+// Model:
+//  * Personal data (users/{uid}) is private to its owner.
+//  * Family data is gated by knowing the secret **family code** (the document
+//    id, e.g. FAM-7KQ4-9XPM). You can only fetch/modify a family by its exact
+//    id and you can NEVER list all families, so codes can't be enumerated —
+//    the same "possess the invite = access" model the app had on Drive.
+//
+// Paste these in: Firebase console -> Firestore Database -> Rules -> Publish.
+// (You can later harden family access to an explicit per-member check; this
+// keeps joining friction-free while codes stay secret.)
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // --- Personal workbook: strictly the signed-in owner -------------------
+    match /users/{uid} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+
+    // --- Shared family workbook: gated by the secret family code -----------
+    match /families/{familyId} {
+      // `get` (direct fetch by id), create/update/delete allowed to any signed
+      // -in user who knows the code. No `list` => the collection can't be
+      // enumerated, so codes are not discoverable.
+      allow get, create, update, delete: if signedIn();
+
+      // Members / wallet / ledger entries under a family the caller can reach.
+      match /{document=**} {
+        allow read, write: if signedIn();
+      }
+    }
+  }
+}

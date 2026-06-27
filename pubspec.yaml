@@ -14,12 +14,19 @@ dependencies:
   # State management
   provider: ^6.1.2
 
-  # Auth + Google Drive
+  # Auth + Google Drive (legacy storage path; kept as a fallback)
   google_sign_in: ^6.2.1
   googleapis: ^13.2.0
   googleapis_auth: ^1.6.0
   extension_google_sign_in_as_googleapis_auth: ^2.0.12
   http: ^1.2.2
+
+  # Cloud backend (free Firestore) — makes the app global for all users and
+  # families with no Google OAuth verification and no server to run. Activated
+  # automatically once lib/firebase_options.dart holds real values.
+  firebase_core: ^3.6.0
+  firebase_auth: ^5.3.1
+  cloud_firestore: ^5.4.4
 
   # Excel storage (dynamic-value API; stable and simple)
   excel: ^2.1.0

@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:intl/intl.dart';
 
 /// Small formatting helpers shared across screens.
@@ -52,4 +54,15 @@ class Fmt {
 String newId([String prefix = 'id']) {
   final now = DateTime.now().microsecondsSinceEpoch;
   return '${prefix}_$now';
+}
+
+/// A random, human-friendly family code used as the shared Family ID and as
+/// the "join" token in invites, e.g. `FAM-7KQ4-9XPM`. Excludes ambiguous
+/// characters (0/O, 1/I/L) so it's easy to read out or type.
+String generateFamilyCode() {
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  final r = Random.secure();
+  String block() =>
+      List.generate(4, (_) => chars[r.nextInt(chars.length)]).join();
+  return 'FAM-${block()}-${block()}';
 }

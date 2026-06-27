@@ -1,9 +1,21 @@
 # Family Finance 💰
 
 A cross-platform **Flutter** app (Android, iOS & Web) to manage a household's
-money. You sign in with Google, and everything is stored as **Excel (`.xlsx`)
-files in your own Google Drive** — including a **shared family "common
-wallet"** that multiple users can contribute to.
+money — salary, expenses, EMIs, reminders, reports and a **shared family
+"common wallet"** multiple people contribute to.
+
+> ### 🌍 Going global (free) — read this first
+> By default the app stores data as Excel files in **your own Google Drive**,
+> which (because of Google's restricted-scope rules) only works for *allow-listed
+> test users*. To make it work for **everyone, worldwide**, switch on the **free
+> Firestore backend** — no credit card, no server, ~10-minute setup. See
+> **[FIREBASE_SETUP.md](FIREBASE_SETUP.md)**. Once `lib/firebase_options.dart`
+> holds real values the app auto-switches to Firestore; until then it keeps
+> using Drive, so nothing breaks.
+>
+> With Firestore: sign in is the **basic Google profile scope** (no
+> verification), you choose **Family Head** or **Member** at first login, and
+> you invite people by sharing a **family code** via email/WhatsApp.
 
 ## Features
 

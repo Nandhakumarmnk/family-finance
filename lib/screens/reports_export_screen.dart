@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../config.dart';
 import '../services/statement_service.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
@@ -23,11 +25,7 @@ class ReportsExportScreen extends StatefulWidget {
 enum _Period { thisMonth, lastMonth, custom }
 
 class _ReportsExportScreenState extends State<ReportsExportScreen> {
-  static const String _apkUrl = String.fromEnvironment(
-    'APK_DOWNLOAD_URL',
-    defaultValue:
-        'https://github.com/Nandhakumarmnk/family-finance/releases/latest/download/app-debug.apk',
-  );
+  static const String _apkUrl = AppConfig.appDownloadUrl;
 
   _Period _period = _Period.thisMonth;
   DateTimeRange? _custom;
@@ -127,6 +125,14 @@ class _ReportsExportScreenState extends State<ReportsExportScreen> {
           ),
           const SizedBox(height: 10),
           _ActionTile(
+            icon: Icons.grid_on,
+            color: const Color(0xFF1565C0),
+            title: 'Copy as CSV',
+            subtitle: 'Copy transactions to paste into Excel / Sheets',
+            onTap: () => _exportCsv(s, start, end),
+          ),
+          const SizedBox(height: 10),
+          _ActionTile(
             icon: Icons.table_chart,
             color: const Color(0xFF1E8E5A),
             title: 'Open Excel in Google Drive',
@@ -179,6 +185,48 @@ class _ReportsExportScreenState extends State<ReportsExportScreen> {
       if (mounted) setState(() => _busy = false);
     }
   }
+
+  /// Build a CSV of all income + expense rows for the period and copy it to the
+  /// clipboard (no extra dependency) so it can be pasted into Excel / Sheets.
+  Future<void> _exportCsv(AppState s, DateTime start, DateTime end) async {
+    final rows = <List<String>>[
+      ['Date', 'Type', 'Category', 'Amount', 'Payment mode', 'Notes'],
+    ];
+    for (final inc in s.salariesBetween(start, end)) {
+      rows.add([
+        Fmt.date(inc.date),
+        'Income',
+        inc.source,
+        inc.amount.toStringAsFixed(2),
+        '',
+        inc.notes,
+      ]);
+    }
+    for (final e in s.expensesBetween(start, end)) {
+      rows.add([
+        Fmt.date(e.date),
+        'Expense',
+        e.category,
+        e.amount.toStringAsFixed(2),
+        e.paymentMode,
+        e.notes,
+      ]);
+    }
+    if (rows.length == 1) {
+      AppFeedback.error('No transactions in this period');
+      return;
+    }
+    final csv = rows.map((r) => r.map(_csvCell).join(',')).join('\r\n');
+    await Clipboard.setData(ClipboardData(text: csv));
+    AppFeedback.success('CSV copied — paste into Sheets/Excel');
+  }
+
+  String _csvCell(String v) => (v.contains(',') ||
+          v.contains('"') ||
+          v.contains('\n') ||
+          v.contains('\r'))
+      ? '"${v.replaceAll('"', '""')}"'
+      : v;
 
   Future<void> _openExcel(AppState s) async {
     final link = await s.personalFileLink();

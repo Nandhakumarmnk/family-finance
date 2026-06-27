@@ -6,12 +6,14 @@ import '../state/app_state.dart';
 import 'activity_screen.dart';
 import 'add_details_screen.dart';
 import 'appearance_screen.dart';
+import 'budgets_screen.dart';
 import 'dashboard_screen.dart';
 import 'reports_export_screen.dart';
 import 'emi_screen.dart';
 import 'expenses_screen.dart';
 import 'family_screen.dart';
 import 'master_screen.dart';
+import 'member_analytics_screen.dart';
 import 'reminders_screen.dart';
 import 'reports_screen.dart';
 import 'salary_screen.dart';
@@ -63,11 +65,39 @@ class _HomeShellState extends State<HomeShell> {
             icon: _avatar(state),
             onSelected: (v) => _onMenu(context, v),
             itemBuilder: (_) => [
+              PopupMenuItem(
+                enabled: false,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(state.profile?.displayName ?? 'Signed in',
+                        style: const TextStyle(fontWeight: FontWeight.w700)),
+                    if (state.roleLabel.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          Icon(
+                              state.isFamilyHead
+                                  ? Icons.shield_moon_outlined
+                                  : Icons.person_outline,
+                              size: 14),
+                          const SizedBox(width: 4),
+                          Text(state.roleLabel,
+                              style: const TextStyle(fontSize: 12)),
+                        ]),
+                      ),
+                  ],
+                ),
+              ),
+              const PopupMenuDivider(),
               const PopupMenuItem(value: 'details', child: _MenuRow(Icons.person, 'My Details')),
               const PopupMenuItem(value: 'salary', child: _MenuRow(Icons.payments, 'Salary / Income')),
               const PopupMenuItem(value: 'reminders', child: _MenuRow(Icons.notifications_active_outlined, 'Payment reminders')),
               const PopupMenuItem(value: 'activity', child: _MenuRow(Icons.history, 'Activity & changes')),
               const PopupMenuItem(value: 'export', child: _MenuRow(Icons.picture_as_pdf_outlined, 'Reports & export')),
+              const PopupMenuItem(value: 'budgets', child: _MenuRow(Icons.savings_outlined, 'Budgets')),
+              if (state.inFamily)
+                const PopupMenuItem(value: 'analytics', child: _MenuRow(Icons.insights_outlined, 'Family analytics')),
               const PopupMenuItem(value: 'appearance', child: _MenuRow(Icons.palette_outlined, 'Appearance')),
               if (BackendService.isConfigured)
                 const PopupMenuItem(value: 'report', child: _MenuRow(Icons.mark_email_read_outlined, 'Email me a report')),
@@ -138,6 +168,12 @@ class _HomeShellState extends State<HomeShell> {
         break;
       case 'export':
         _push(context, const ReportsExportScreen());
+        break;
+      case 'budgets':
+        _push(context, const BudgetsScreen());
+        break;
+      case 'analytics':
+        _push(context, const MemberAnalyticsScreen());
         break;
       case 'report':
         _emailReport(context);

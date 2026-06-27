@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../models/wallet_entry.dart';
+import '../services/invite_service.dart';
 import '../state/app_state.dart';
 import '../utils/format.dart';
 import '../widgets/common.dart';
+import 'family_setup_screen.dart';
 
 /// Shared family "common wallet": every member can top-up or spend, and the
 /// balance + history is stored in the shared family workbook on Drive.
@@ -156,31 +157,13 @@ class FamilyWalletScreen extends StatelessWidget {
   }
 
   Future<void> _invite(BuildContext context) async {
-    final controller = TextEditingController();
-    final email = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Invite family member'),
-        content: TextField(
-          controller: controller,
-          keyboardType: TextInputType.emailAddress,
-          decoration: const InputDecoration(labelText: 'Their Google email'),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, controller.text.trim()), child: const Text('Invite')),
-        ],
-      ),
+    final s = context.read<AppState>();
+    await showInviteSheet(
+      context,
+      familyName: s.family?.familyName ?? '',
+      familyCode: s.familyCode,
+      inviterName: s.profile?.displayName ?? '',
     );
-    if (email == null || email.isEmpty || !context.mounted) return;
-    final link = await context.read<AppState>().inviteMember(email);
-    if (!context.mounted) return;
-    if (link != null) {
-      await Clipboard.setData(ClipboardData(text: link));
-    }
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(link != null ? 'Invited $email — share link copied' : 'Invited $email'),
-    ));
   }
 }
 
@@ -288,9 +271,16 @@ class _NoFamily extends StatelessWidget {
                 style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
             const Text(
-              'Open “My Details” from the top-right menu and set a Family ID '
-              'to create a shared common wallet for your family.',
+              'Create a family and become the family head, or join one with a '
+              'code, to share a common wallet with everyone.',
               textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 20),
+            FilledButton.icon(
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => const FamilySetupScreen())),
+              icon: const Icon(Icons.family_restroom),
+              label: const Text('Set up family'),
             ),
           ],
         ),

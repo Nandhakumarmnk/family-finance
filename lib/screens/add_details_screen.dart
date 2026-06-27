@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../services/invite_service.dart';
 import '../state/app_state.dart';
 import '../utils/format.dart';
 import '../widgets/common.dart';
+import 'family_setup_screen.dart';
 
 /// "Add Details" — edit the signed-in user's profile and link/create a family.
 class AddDetailsScreen extends StatefulWidget {
@@ -18,7 +20,6 @@ class _AddDetailsScreenState extends State<AddDetailsScreen> {
   late TextEditingController _name;
   late TextEditingController _phone;
   late TextEditingController _occupation;
-  late TextEditingController _familyId;
   late TextEditingController _familyName;
   late String _currency;
 
@@ -29,7 +30,6 @@ class _AddDetailsScreenState extends State<AddDetailsScreen> {
     _name = TextEditingController(text: p.displayName);
     _phone = TextEditingController(text: p.phone);
     _occupation = TextEditingController(text: p.occupation);
-    _familyId = TextEditingController(text: p.familyId);
     _familyName = TextEditingController(text: p.familyName);
     _currency = p.currencyCode;
   }
@@ -39,7 +39,6 @@ class _AddDetailsScreenState extends State<AddDetailsScreen> {
     _name.dispose();
     _phone.dispose();
     _occupation.dispose();
-    _familyId.dispose();
     _familyName.dispose();
     super.dispose();
   }
@@ -53,21 +52,16 @@ class _AddDetailsScreenState extends State<AddDetailsScreen> {
       occupation: _occupation.text.trim(),
       currencyCode: _currency,
     );
-    final fid = _familyId.text.trim();
     final fname = _familyName.text.trim();
-    final idChanged = fid.isNotEmpty && fid != s.profile!.familyId;
-    final joiningFirstTime = fid.isNotEmpty && !s.inFamily;
-    if (idChanged || joiningFirstTime) {
-      await s.createOrJoinFamily(fid, fname);
-    } else if (s.inFamily &&
+    if (s.inFamily &&
         fname.isNotEmpty &&
         fname != (s.family?.familyName ?? s.profile!.familyName)) {
-      // Same Family ID, only the name changed — just rename in place.
+      // Rename the family in place (the shared code stays the same).
       await s.renameFamily(fname);
     }
     if (mounted) {
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Details saved to Drive')));
+          .showSnackBar(const SnackBar(content: Text('Details saved')));
       Navigator.of(context).maybePop();
     }
   }
@@ -127,25 +121,62 @@ class _AddDetailsScreenState extends State<AddDetailsScreen> {
             ),
             const SizedBox(height: 28),
             Text('Family', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 4),
-            Text(
-              'Use the same Family ID across family members to share one '
-              'common wallet workbook on Drive.',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _familyId,
-              decoration: const InputDecoration(
-                labelText: 'Family ID',
-                hintText: 'e.g. sharma_family_2026',
+            const SizedBox(height: 8),
+            if (s.inFamily) ...[
+              Row(
+                children: [
+                  if (s.roleLabel.isNotEmpty)
+                    Chip(
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      avatar: Icon(
+                          s.isFamilyHead
+                              ? Icons.shield_moon_outlined
+                              : Icons.person_outline,
+                          size: 16),
+                      label: Text(s.roleLabel),
+                    ),
+                ],
               ),
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _familyName,
-              decoration: const InputDecoration(labelText: 'Family name'),
-            ),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: _familyName,
+                decoration: const InputDecoration(labelText: 'Family name'),
+              ),
+              const SizedBox(height: 12),
+              InputDecorator(
+                decoration: const InputDecoration(
+                  labelText: 'Family code (share to invite)',
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: SelectableText(
+                        s.familyCode,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w700, letterSpacing: 0.5),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Invite',
+                      icon: const Icon(Icons.person_add_alt),
+                      onPressed: () => showInviteSheet(
+                        context,
+                        familyName: s.family?.familyName ?? '',
+                        familyCode: s.familyCode,
+                        inviterName: s.profile?.displayName ?? '',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ] else
+              OutlinedButton.icon(
+                onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => const FamilySetupScreen())),
+                icon: const Icon(Icons.family_restroom),
+                label: const Text('Create or join a family'),
+              ),
             const SizedBox(height: 28),
             FilledButton.icon(
               onPressed: s.busy ? null : _save,

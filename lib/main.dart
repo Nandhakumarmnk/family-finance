@@ -1,6 +1,9 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'firebase_options.dart';
+import 'screens/family_setup_screen.dart';
 import 'screens/home_shell.dart';
 import 'screens/login_screen.dart';
 import 'screens/pin_screen.dart';
@@ -10,19 +13,37 @@ import 'state/theme_controller.dart';
 import 'theme.dart';
 import 'widgets/feedback.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const FamilyFinanceApp());
+  final firestoreEnabled = await _initFirebase();
+  runApp(FamilyFinanceApp(firestoreEnabled: firestoreEnabled));
+}
+
+/// Initialise Firebase only when a real `firebase_options.dart` is present
+/// (the shipped placeholder has empty keys). Returns true when the app should
+/// use the global cloud (Firestore) backend; false keeps the legacy Drive path.
+Future<bool> _initFirebase() async {
+  try {
+    final options = DefaultFirebaseOptions.currentPlatform;
+    if (options.apiKey.isEmpty) return false;
+    await Firebase.initializeApp(options: options);
+    return true;
+  } catch (_) {
+    return false;
+  }
 }
 
 class FamilyFinanceApp extends StatelessWidget {
-  const FamilyFinanceApp({super.key});
+  const FamilyFinanceApp({super.key, required this.firestoreEnabled});
+
+  final bool firestoreEnabled;
 
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => AppState()..init()),
+        ChangeNotifierProvider(
+            create: (_) => AppState(firestoreEnabled: firestoreEnabled)..init()),
         ChangeNotifierProvider(create: (_) => ThemeController()),
         ChangeNotifierProvider(create: (_) => PinController()),
       ],
@@ -58,6 +79,9 @@ class _Root extends StatelessWidget {
         final pin = context.watch<PinController>();
         if (!pin.loaded) return const _Splash();
         if (pin.isLocked) return const PinLockScreen();
+        final needsSetup =
+            context.select<AppState, bool>((s) => s.needsFamilySetup);
+        if (needsSetup) return const FamilySetupScreen();
         return const HomeShell();
     }
   }

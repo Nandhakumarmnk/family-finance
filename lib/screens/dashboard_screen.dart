@@ -6,6 +6,7 @@ import '../state/app_state.dart';
 import '../utils/category_icons.dart';
 import '../utils/format.dart';
 import '../widgets/common.dart';
+import 'budgets_screen.dart';
 import 'reminders_screen.dart';
 
 class DashboardScreen extends StatelessWidget {
@@ -102,6 +103,10 @@ class DashboardScreen extends StatelessWidget {
           if (s.dueReminders.isNotEmpty) ...[
             const SizedBox(height: 8),
             _remindersAlert(context, s, cur),
+          ],
+          if (s.overBudget.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            _overBudgetAlert(context, s, cur),
           ],
           const SizedBox(height: 8),
           const SectionHeader('Spending by category'),
@@ -285,6 +290,76 @@ class DashboardScreen extends StatelessWidget {
                     onPressed: open,
                     child: Text('View all ${due.length}'),
                   ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Alert listing categories that have gone over their monthly budget.
+  /// Tapping opens the Budgets screen.
+  Widget _overBudgetAlert(BuildContext context, AppState s, String cur) {
+    final theme = Theme.of(context);
+    final over = s.overBudget;
+    void open() => Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => const BudgetsScreen()));
+
+    return Card(
+      color: theme.colorScheme.errorContainer.withOpacity(0.4),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: open,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.warning_amber_rounded,
+                      color: theme.colorScheme.error, size: 20),
+                  const SizedBox(width: 8),
+                  Text('Over budget',
+                      style: theme.textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.bold)),
+                  const Spacer(),
+                  Text('${over.length}',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                          color: theme.colorScheme.error,
+                          fontWeight: FontWeight.bold)),
+                ],
+              ),
+              const SizedBox(height: 8),
+              ...over.take(3).map((b) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      children: [
+                        Icon(CategoryIcons.byKey(s.iconKeyFor(b.category)),
+                            size: 16,
+                            color: theme.colorScheme.onSurfaceVariant),
+                        const SizedBox(width: 8),
+                        Expanded(
+                            child: Text(b.category,
+                                overflow: TextOverflow.ellipsis)),
+                        Text(
+                          '${Fmt.currency(b.spent, code: cur)} / ${Fmt.currency(b.limit, code: cur)}',
+                          style: theme.textTheme.labelMedium?.copyWith(
+                              color: theme.colorScheme.error,
+                              fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                  )),
+              if (over.length > 3) ...[
+                const SizedBox(height: 4),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                      onPressed: open,
+                      child: Text('View all ${over.length}')),
                 ),
               ],
             ],

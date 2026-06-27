@@ -1,8 +1,10 @@
 // `Category` is also the name of a Flutter foundation annotation, so hide it to
 // avoid an ambiguous-import clash with our own `Category` model below.
 import 'package:flutter/foundation.dart' hide Category;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/activity.dart';
+import '../models/budget.dart';
 import '../models/category.dart';
 import '../models/emi.dart';
 import '../models/expense.dart';
@@ -16,6 +18,8 @@ import '../models/wallet_entry.dart';
 import '../services/auth_service.dart';
 import '../services/backend_service.dart';
 import '../services/drive_service.dart';
+import '../services/firestore_repository.dart';
+import '../utils/format.dart';
 import '../widgets/feedback.dart';
 import '../services/finance_repository.dart';
 
@@ -25,9 +29,10 @@ enum AppStatus { initializing, signedOut, signedIn, error }
 /// selected reporting period, and all mutating operations (which persist to
 /// Drive after updating the in-memory model).
 class AppState extends ChangeNotifier {
-  final AuthService _auth = AuthService();
+  final bool _firestoreEnabled;
+  late final AuthService _auth;
 
-  FinanceRepository? _repo;
+  FinanceStore? _repo;
   PersonalData? _personal;
   FamilyData? _family;
 
@@ -35,11 +40,17 @@ class AppState extends ChangeNotifier {
   bool busy = false;
   String? error;
 
+  /// Set once the user chooses to skip family setup (solo use). Persisted
+  /// per-account so the onboarding screen doesn't nag on every launch.
+  bool _familySetupDismissed = false;
+
   // Selected period for the reports/dashboard view.
   late int selectedYear;
   late int selectedMonth;
 
-  AppState() {
+  AppState({bool firestoreEnabled = false})
+      : _firestoreEnabled = firestoreEnabled {
+    _auth = AuthService(useFirebase: firestoreEnabled);
     final now = DateTime.now();
     selectedYear = now.year;
     selectedMonth = now.month;
@@ -51,6 +62,24 @@ class AppState extends ChangeNotifier {
   FamilyData? get family => _family;
   bool get inFamily => (_personal?.profile.familyId ?? '').isNotEmpty;
   String get currency => _personal?.profile.currencyCode ?? 'INR';
+
+  /// True if the signed-in user is the family head (the Owner of the family).
+  bool get isFamilyHead {
+    final email = _personal?.profile.email ?? '';
+    final me = members.where((m) => m.email == email);
+    return me.isNotEmpty && me.first.role.toLowerCase() == 'owner';
+  }
+
+  /// A short label for the user's household role; '' when not in a family.
+  String get roleLabel =>
+      !inFamily ? '' : (isFamilyHead ? 'Family head' : 'Member');
+
+  /// The family code (== Family ID) the head shares so others can join.
+  String get familyCode => _personal?.profile.familyId ?? '';
+
+  /// Whether to show the one-time "set up your family" onboarding screen.
+  bool get needsFamilySetup =>
+      status == AppStatus.signedIn && !inFamily && !_familySetupDismissed;
 
   List<Salary> get salaries => _personal?.salaries ?? const [];
   List<Expense> get expenses => _personal?.expenses ?? const [];
@@ -182,18 +211,26 @@ class AppState extends ChangeNotifier {
 
   Future<void> _onSignedIn() async {
     final account = _auth.account!;
-    final client = await _auth.authenticatedClient();
-    if (client == null) {
-      throw StateError('Could not obtain an authenticated Google client.');
+    if (_firestoreEnabled) {
+      _repo = FirestoreRepository(uid: account.uid);
+    } else {
+      final client = await _auth.authenticatedClient();
+      if (client == null) {
+        throw StateError('Could not obtain an authenticated Google client.');
+      }
+      _repo = FinanceRepository(DriveService(client));
     }
-    _repo = FinanceRepository(DriveService(client));
 
     final seed = UserProfile(
       email: account.email,
-      displayName: account.displayName ?? account.email,
+      displayName: account.displayName,
       photoUrl: account.photoUrl,
     );
     _personal = await _repo!.loadPersonal(seed);
+
+    final prefs = await SharedPreferences.getInstance();
+    _familySetupDismissed =
+        prefs.getBool('family_setup_dismissed_${account.email}') ?? false;
 
     if (inFamily) {
       await _loadFamily();
@@ -201,13 +238,15 @@ class AppState extends ChangeNotifier {
     status = AppStatus.signedIn;
     notifyListeners();
 
-    // Register with the daily-report backend now that we know the household
-    // role (no-op unless a backend is configured). Fire-and-forget.
-    BackendService.linkForDailyReport(
-      account.serverAuthCode,
-      familyId: _personal?.profile.familyId ?? '',
-      role: _householdRole(),
-    );
+    // The daily-report email backend reads Google Drive, so it only applies to
+    // the legacy Drive path. Fire-and-forget; no-op unless a backend is set.
+    if (!_firestoreEnabled) {
+      BackendService.linkForDailyReport(
+        account.serverAuthCode,
+        familyId: _personal?.profile.familyId ?? '',
+        role: _householdRole(),
+      );
+    }
   }
 
   /// 'parent' if this user is the family owner, otherwise 'member'.
@@ -295,6 +334,50 @@ class AppState extends ChangeNotifier {
         _personal!.categories.any((c) => c.name.toLowerCase() == name.toLowerCase());
     if (!exists) _personal!.categories.add(Category(name: name, iconKey: iconKey));
   }
+
+  // --- budgets (per-category monthly limits) ---------------------------------
+  List<Budget> get budgets => _personal?.budgets ?? const [];
+
+  /// The monthly limit set for [category], or 0 if none.
+  double budgetFor(String category) {
+    for (final b in budgets) {
+      if (b.category == category) return b.monthlyLimit;
+    }
+    return 0;
+  }
+
+  /// Set (or, when [limit] <= 0, clear) the monthly budget for [category].
+  Future<void> setBudget(String category, double limit) async {
+    if (_personal == null || category.trim().isEmpty) return;
+    final list = _personal!.budgets;
+    final idx = list.indexWhere((b) => b.category == category);
+    if (limit <= 0) {
+      if (idx >= 0) list.removeAt(idx);
+    } else if (idx >= 0) {
+      list[idx].monthlyLimit = limit;
+    } else {
+      list.add(Budget(category: category, monthlyLimit: limit));
+    }
+    await _persistPersonal();
+    _celebrate(limit <= 0 ? 'Budget cleared' : 'Budget saved');
+  }
+
+  /// Budget-vs-spend for every budgeted category in the selected month,
+  /// most-over-budget first.
+  List<BudgetStatus> budgetStatuses() {
+    final spend = categoryBreakdown(selectedYear, selectedMonth);
+    return budgets
+        .map((b) => BudgetStatus(
+            category: b.category,
+            limit: b.monthlyLimit,
+            spent: spend[b.category] ?? 0))
+        .toList()
+      ..sort((a, b) => b.ratio.compareTo(a.ratio));
+  }
+
+  /// Budgeted categories whose spend in the selected month is over the limit.
+  List<BudgetStatus> get overBudget =>
+      budgetStatuses().where((s) => s.isOver).toList();
 
   // --- payment reminders -----------------------------------------------------
   Future<void> addReminder(Reminder r) async {
@@ -516,6 +599,52 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Create a brand-new family with the signed-in user as the **head** (Owner).
+  /// A random, hard-to-guess family code is generated and used as the shared
+  /// Family ID; share it with relatives so they can join.
+  Future<void> createFamily(String familyName) async {
+    final code = generateFamilyCode();
+    await createOrJoinFamily(code, familyName);
+    _familySetupDismissed = true; // setup is complete
+  }
+
+  /// Join an existing family by its shared code (from an invite). The user is
+  /// added to the roster as a member (not the head).
+  Future<void> joinFamily(String familyCode) async {
+    final code = familyCode.trim();
+    if (code.isEmpty) return;
+    await createOrJoinFamily(code, '');
+    await _ensureSelfMember();
+    _familySetupDismissed = true; // setup is complete
+  }
+
+  /// Ensure the signed-in user appears in the family roster (as a member) after
+  /// joining an existing family they weren't pre-registered in.
+  Future<void> _ensureSelfMember() async {
+    if (_family == null || _personal == null) return;
+    final p = _personal!.profile;
+    if (_family!.members.any((m) => m.email == p.email)) return;
+    _family!.members.add(Member(
+      email: p.email,
+      name: p.displayName,
+      role: 'Adult',
+      relationship: 'Other',
+      phone: p.phone,
+    ));
+    await _persistFamily();
+  }
+
+  /// Skip family setup and use the app solo (personal finance only). Remembered
+  /// per-account so the onboarding screen doesn't reappear on every launch.
+  Future<void> dismissFamilySetup() async {
+    _familySetupDismissed = true;
+    notifyListeners();
+    final email = _personal?.profile.email;
+    if (email == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('family_setup_dismissed_$email', true);
+  }
+
   /// Rename the family without changing the Family ID (so the shared workbook
   /// and members stay the same). The new name is written to the shared workbook
   /// so every member sees it, and mirrored into this user's profile.
@@ -591,16 +720,6 @@ class AppState extends ChangeNotifier {
     _family!.members.removeWhere((e) => e.email == email);
     _family!.tombstones.add(email); // so the removal syncs to other members
     await _persistFamily();
-  }
-
-  Future<String?> inviteMember(String email) async {
-    final link = await _repo!.shareFamily(_family!.fileId, email);
-    // Pre-register the invited member so they show up immediately.
-    if (!_family!.members.any((m) => m.email == email)) {
-      _family!.members.add(Member(email: email, name: email.split('@').first));
-      await _persistFamily();
-    }
-    return link;
   }
 
   // --- common wallet ---------------------------------------------------------

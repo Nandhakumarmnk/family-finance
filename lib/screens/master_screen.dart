@@ -5,9 +5,11 @@ import 'package:provider/provider.dart';
 
 import '../models/category.dart';
 import '../models/member.dart';
+import '../services/invite_service.dart';
 import '../state/app_state.dart';
 import '../utils/category_icons.dart';
 import '../widgets/common.dart';
+import 'family_setup_screen.dart';
 
 /// Master / Users page — manage the family's users (multi-user roster), their
 /// roles and invitations (backed by the shared family workbook), plus the
@@ -70,28 +72,72 @@ class MasterScreen extends StatelessWidget {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            CircleAvatar(
-              backgroundColor: theme.colorScheme.primaryContainer,
-              child: const Icon(Icons.family_restroom),
+            Row(
+              children: [
+                CircleAvatar(
+                  backgroundColor: theme.colorScheme.primaryContainer,
+                  child: const Icon(Icons.family_restroom),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                          s.family?.familyName ??
+                              s.profile?.familyName ??
+                              'Family',
+                          style: theme.textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.bold)),
+                      if (s.roleLabel.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Chip(
+                          visualDensity: VisualDensity.compact,
+                          materialTapTargetSize:
+                              MaterialTapTargetSize.shrinkWrap,
+                          avatar: Icon(
+                              s.isFamilyHead
+                                  ? Icons.shield_moon_outlined
+                                  : Icons.person_outline,
+                              size: 16),
+                          label: Text(s.roleLabel),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                Text('${s.members.length}',
+                    style: theme.textTheme.headlineSmall
+                        ?.copyWith(fontWeight: FontWeight.bold)),
+              ],
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(s.family?.familyName ?? s.profile?.familyName ?? 'Family',
-                      style: theme.textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.bold)),
-                  Text('ID: ${s.profile?.familyId ?? ''}',
-                      style: theme.textTheme.bodySmall),
-                ],
-              ),
+            const Divider(height: 24),
+            Text('Family code', style: theme.textTheme.labelMedium),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Expanded(
+                  child: SelectableText(
+                    s.familyCode,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700, letterSpacing: 0.5),
+                  ),
+                ),
+                FilledButton.tonalIcon(
+                  onPressed: () => showInviteSheet(
+                    context,
+                    familyName: s.family?.familyName ?? '',
+                    familyCode: s.familyCode,
+                    inviterName: s.profile?.displayName ?? '',
+                  ),
+                  icon: const Icon(Icons.person_add_alt, size: 18),
+                  label: const Text('Invite'),
+                ),
+              ],
             ),
-            Text('${s.members.length}',
-                style: theme.textTheme.headlineSmall
-                    ?.copyWith(fontWeight: FontWeight.bold)),
           ],
         ),
       ),
@@ -99,19 +145,31 @@ class MasterScreen extends StatelessWidget {
   }
 
   Widget _noFamilyCard(BuildContext context) {
-    return const Card(
+    return Card(
       child: Padding(
-        padding: EdgeInsets.all(16),
-        child: Row(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(Icons.groups_outlined),
-            SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                'Set a Family ID in “My Details” to add users and share a '
-                'common wallet. You can still manage your expense categories '
-                'below.',
-              ),
+            const Row(
+              children: [
+                Icon(Icons.groups_outlined),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Create a family (you become the family head) or join one '
+                    'with a code to share a common wallet. You can still manage '
+                    'your expense categories below.',
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => const FamilySetupScreen())),
+              icon: const Icon(Icons.family_restroom),
+              label: const Text('Set up family'),
             ),
           ],
         ),
@@ -319,9 +377,9 @@ class MasterScreen extends StatelessWidget {
                 if (existing == null)
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
-                    title: const Text('Send Drive invite'),
+                    title: const Text('Send a join invite'),
                     subtitle: const Text(
-                        'Share the family workbook with this email'),
+                        'Open email / WhatsApp with a join link'),
                     value: invite,
                     onChanged: (v) => setS(() => invite = v),
                   ),
@@ -353,8 +411,15 @@ class MasterScreen extends StatelessWidget {
       active: active,
     );
     await s.addOrUpdateMember(m);
-    if (existing == null && invite && m.email.isNotEmpty) {
-      await s.inviteMember(m.email);
+    if (existing == null && invite && context.mounted) {
+      await showInviteSheet(
+        context,
+        familyName: s.family?.familyName ?? '',
+        familyCode: s.familyCode,
+        inviterName: s.profile?.displayName ?? '',
+        toEmail: m.email,
+        toPhone: m.phone,
+      );
     }
   }
 }

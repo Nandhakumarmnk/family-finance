@@ -34,6 +34,36 @@ jobs:
         # It will NOT overwrite existing lib/ source.
         run: flutter create . --org net.ramrajcotton --project-name family_finance
 
+      - name: Configure Android native bits (biometric + Firebase minSdk)
+        # `flutter create` regenerates a default MainActivity that extends
+        # FlutterActivity. The local_auth plugin's authenticate() REQUIRES a
+        # FlutterFragmentActivity host — otherwise enabling fingerprint/face
+        # unlock crashes the app (a common "installed but not accessible /
+        # keeps stopping" symptom). We also declare the biometric permission,
+        # and bump minSdk to 23 (Firebase Auth's minimum).
+        run: |
+          MA=$(find android/app/src/main -name 'MainActivity.kt' | head -n1)
+          if [ -n "$MA" ]; then
+            sed -i 's/io\.flutter\.embedding\.android\.FlutterActivity/io.flutter.embedding.android.FlutterFragmentActivity/' "$MA"
+            sed -i 's/: *FlutterActivity()/: FlutterFragmentActivity()/' "$MA"
+            echo "Patched $MA to FlutterFragmentActivity:"; cat "$MA"
+          else
+            echo "::warning::MainActivity.kt not found - biometric host not patched."
+          fi
+          MAN=android/app/src/main/AndroidManifest.xml
+          if [ -f "$MAN" ] && ! grep -q "USE_BIOMETRIC" "$MAN"; then
+            sed -i 's#\(<manifest[^>]*>\)#\1\n    <uses-permission android:name="android.permission.USE_BIOMETRIC"/>#' "$MAN"
+            echo "Declared USE_BIOMETRIC permission."
+          fi
+          # Firebase Auth requires minSdk >= 23; the template uses
+          # flutter.minSdkVersion (currently lower). Pin it to 23.
+          for GF in android/app/build.gradle android/app/build.gradle.kts; do
+            if [ -f "$GF" ]; then
+              sed -i -E 's/minSdk(Version)?[ =]+flutter\.minSdkVersion/minSdk = 23/' "$GF"
+              echo "Set minSdk=23 in $GF"
+            fi
+          done
+
       - name: Restore fixed debug keystore
         # A fixed keystore => fixed SHA-1 => Google Sign-In works. Flutter signs
         # both debug AND release APKs with this debug keystore by default, so
@@ -87,14 +117,20 @@ jobs:
           path: build/app/outputs/flutter-apk/app-release.apk
 
       - name: Publish APK to the 'latest' release
-        # Gives a stable, one-tap download URL the in-app button points to:
-        #   .../releases/latest/download/app-debug.apk
+        # Publishes the RELEASE apk (optimized + non-debuggable) so Android /
+        # Play Protect doesn't block it as an "unsafe" debug build — the usual
+        # cause of "app not installed / not accessible" on a sideloaded build.
+        # It's debug-keystore-signed (see above) so the registered SHA-1 still
+        # matches and Google Sign-In keeps working. Stable one-tap URLs:
+        #   .../releases/latest/download/app-release.apk   (recommended)
+        #   .../releases/latest/download/app-debug.apk     (fallback)
         if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete latest --yes --cleanup-tag 2>/dev/null || true
           gh release create latest \
+            build/app/outputs/flutter-apk/app-release.apk \
             build/app/outputs/flutter-apk/app-debug.apk \
             --title "Latest Android build" \
             --notes "Auto-built from ${{ github.sha }}"

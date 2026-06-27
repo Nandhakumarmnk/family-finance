@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import '../models/activity.dart';
+import '../models/budget.dart';
 import '../models/category.dart';
 import '../models/emi.dart';
 import '../models/expense.dart';
@@ -13,6 +14,20 @@ import '../models/user_profile.dart';
 import '../models/wallet_entry.dart';
 import 'drive_service.dart';
 import 'excel_codec.dart';
+
+/// Storage-agnostic contract the app's state talks to. Implemented by
+/// [FinanceRepository] (Google Drive Excel — legacy) and by `FirestoreRepository`
+/// (the free cloud backend). This lets [AppState] swap backends without
+/// changing any of its mutation/merge logic.
+abstract class FinanceStore {
+  Future<PersonalData> loadPersonal(UserProfile seedProfile);
+  Future<void> savePersonal(PersonalData data);
+  Future<FamilyData> loadFamily(String familyId, String familyName,
+      {required Member creatorAsMember});
+  Future<void> saveFamily(FamilyData data, {bool overwriteName});
+  Future<void> trashFile(String fileId);
+  Future<String?> fileWebLink(String fileId);
+}
 
 /// Reads and writes the two Excel workbooks (personal + shared family) that
 /// back the whole app, using [DriveService] for transport and [ExcelCodec]
@@ -30,7 +45,7 @@ import 'excel_codec.dart';
 /// family_<familyId>.xlsx   (shared with family members on Drive)
 ///   - Members
 ///   - Wallet
-class FinanceRepository {
+class FinanceRepository implements FinanceStore {
   FinanceRepository(this._drive);
 
   final DriveService _drive;
@@ -46,6 +61,7 @@ class FinanceRepository {
   static const _sActivity = 'Activity';
   static const _sCategories = 'Categories';
   static const _sReminders = 'Reminders';
+  static const _sBudgets = 'Budgets';
   static const _sFamilyLedger = 'FamilyLedger';
   static const _sTombstones = 'Deleted';
   static const _sInfo = 'Info'; // key/value metadata (e.g. shared family name)
@@ -79,6 +95,7 @@ class FinanceRepository {
         activities: [],
         categories: Category.defaults(),
         reminders: [],
+        budgets: [],
       );
       data.fileId = await _savePersonal(data, folderId: folderId, name: name);
       return data;
@@ -122,6 +139,8 @@ class FinanceRepository {
       // Pre-reminders workbooks simply have no Reminders sheet → empty list.
       reminders:
           ExcelCodec.dataRows(wb, _sReminders).map(Reminder.fromRow).toList(),
+      // Pre-budgets workbooks have no Budgets sheet → empty list.
+      budgets: ExcelCodec.dataRows(wb, _sBudgets).map(Budget.fromRow).toList(),
     );
   }
 
@@ -145,6 +164,7 @@ class FinanceRepository {
       _sActivity: [Activity.header, ...data.activities.map((e) => e.toRow())],
       _sCategories: [Category.header, ...data.categories.map((e) => e.toRow())],
       _sReminders: [Reminder.header, ...data.reminders.map((e) => e.toRow())],
+      _sBudgets: [Budget.header, ...data.budgets.map((e) => e.toRow())],
     };
     final bytes = ExcelCodec.encode(sheets);
     return _drive.upsertXlsx(name, bytes, parentId: folderId);
@@ -358,6 +378,7 @@ class PersonalData {
   final List<Activity> activities;
   final List<Category> categories;
   final List<Reminder> reminders;
+  final List<Budget> budgets;
 
   PersonalData({
     required this.fileId,
@@ -369,6 +390,7 @@ class PersonalData {
     required this.activities,
     required this.categories,
     required this.reminders,
+    required this.budgets,
   });
 }
 
