@@ -4,19 +4,23 @@ rules_version = '2';
 //
 // Model:
 //  * Personal data (users/{uid}) is private to its owner.
-//  * Family data is gated by knowing the secret **family code** (the document
-//    id, e.g. FAM-7KQ4-9XPM). You can only fetch/modify a family by its exact
-//    id and you can NEVER list all families, so codes can't be enumerated —
-//    the same "possess the invite = access" model the app had on Drive.
+//  * A family is reachable only by knowing its secret **family code** (the
+//    document id, e.g. FAM-7KQ4-9XPM) — you can fetch a family by its exact id
+//    but can NEVER list all families, so codes can't be enumerated.
+//  * Reading/writing a family's entries (members, wallet, ledger) requires
+//    being in that family's `memberEmails` list. So when the head **removes**
+//    someone, that person immediately loses access. A new member adds their own
+//    email to `memberEmails` once (the "join" step) and is then a member.
 //
 // Paste these in: Firebase console -> Firestore Database -> Rules -> Publish.
-// (You can later harden family access to an explicit per-member check; this
-// keeps joining friction-free while codes stay secret.)
 service cloud.firestore {
   match /databases/{database}/documents {
 
     function signedIn() {
       return request.auth != null;
+    }
+    function email() {
+      return request.auth.token.email;
     }
 
     // --- Personal workbook: strictly the signed-in owner -------------------
@@ -24,16 +28,33 @@ service cloud.firestore {
       allow read, write: if signedIn() && request.auth.uid == uid;
     }
 
-    // --- Shared family workbook: gated by the secret family code -----------
+    // --- Shared family workbook --------------------------------------------
     match /families/{familyId} {
-      // `get` (direct fetch by id), create/update/delete allowed to any signed
-      // -in user who knows the code. No `list` => the collection can't be
-      // enumerated, so codes are not discoverable.
-      allow get, create, update, delete: if signedIn();
+      function isMember() {
+        return signedIn()
+          && resource.data.memberEmails is list
+          && email() in resource.data.memberEmails;
+      }
+      // Allow a user to add ONLY themselves to a family they know the code for.
+      function isJoiningSelf() {
+        return signedIn()
+          && request.resource.data.memberEmails is list
+          && email() in request.resource.data.memberEmails;
+      }
 
-      // Members / wallet / ledger entries under a family the caller can reach.
-      match /{document=**} {
-        allow read, write: if signedIn();
+      allow get: if signedIn();          // fetch by secret code; no `list`
+      allow create: if signedIn()
+                    && request.resource.data.ownerEmail == email();
+      allow update: if isMember() || isJoiningSelf();
+      allow delete: if signedIn() && resource.data.ownerEmail == email();
+
+      // Members / wallet / ledger entries — only current members of THIS family.
+      match /{sub}/{docId} {
+        function familyMembers() {
+          return get(/databases/$(database)/documents/families/$(familyId))
+              .data.memberEmails;
+        }
+        allow read, write: if signedIn() && email() in familyMembers();
       }
     }
   }

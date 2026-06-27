@@ -19,6 +19,7 @@ import '../services/auth_service.dart';
 import '../services/backend_service.dart';
 import '../services/drive_service.dart';
 import '../services/firestore_repository.dart';
+import '../services/notification_service.dart';
 import '../utils/format.dart';
 import '../widgets/feedback.dart';
 import '../services/finance_repository.dart';
@@ -174,6 +175,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> signOut() async {
     await _auth.signOut();
+    await NotificationService.cancelAll();
     _personal = null;
     _family = null;
     _repo = null;
@@ -237,6 +239,9 @@ class AppState extends ChangeNotifier {
     }
     status = AppStatus.signedIn;
     notifyListeners();
+
+    // Schedule device notifications for upcoming reminders.
+    _syncNotifications();
 
     // The daily-report email backend reads Google Drive, so it only applies to
     // the legacy Drive path. Fire-and-forget; no-op unless a backend is set.
@@ -948,6 +953,13 @@ class AppState extends ChangeNotifier {
     } finally {
       _setBusy(false);
     }
+    _syncNotifications();
+  }
+
+  /// Re-schedule device notifications to match the current reminders.
+  /// Fire-and-forget; safe to call often.
+  void _syncNotifications() {
+    NotificationService.sync(reminders, currency: currency);
   }
 
   Future<void> _persistFamily({bool overwriteName = false}) async {

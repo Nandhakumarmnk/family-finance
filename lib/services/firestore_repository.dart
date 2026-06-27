@@ -176,6 +176,15 @@ class FirestoreRepository implements FinanceStore {
 
     final d = snap.data()!;
     final storedName = (d['familyName'] as String?) ?? '';
+    // Join: if we're not yet listed in this family, add ourselves to the
+    // member-emails list first so the security rules let us read its entries.
+    final memberEmails =
+        ((d['memberEmails'] as List?) ?? const []).map((e) => '$e').toList();
+    if (!memberEmails.contains(creatorAsMember.email)) {
+      await famRef.update({
+        'memberEmails': FieldValue.arrayUnion([creatorAsMember.email]),
+      });
+    }
     final members =
         await _readSub(famRef.collection('members'), Member.header, Member.fromRow);
     final wallet = await _readSub(
@@ -209,7 +218,6 @@ class FirestoreRepository implements FinanceStore {
 
   Future<void> _writeFamily(FamilyData data, {String? ownerEmail}) async {
     final famRef = _families.doc(data.familyId);
-    final ops = <void Function(WriteBatch)>[];
 
     final famDoc = <String, dynamic>{
       'familyName': data.familyName,
@@ -217,8 +225,11 @@ class FirestoreRepository implements FinanceStore {
       'updatedAt': FieldValue.serverTimestamp(),
     };
     if (ownerEmail != null) famDoc['ownerEmail'] = ownerEmail;
-    ops.add((b) => b.set(famRef, famDoc, SetOptions(merge: true)));
+    // Commit the family doc FIRST so its memberEmails are in place before any
+    // subcollection write — the rules authorise those against this doc.
+    await famRef.set(famDoc, SetOptions(merge: true));
 
+    final ops = <void Function(WriteBatch)>[];
     await _collectReconcile(
         ops,
         famRef.collection('members'),

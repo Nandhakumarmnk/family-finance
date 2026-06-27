@@ -36,7 +36,14 @@ money — salary, expenses, EMIs, reminders, reports and a **shared family
   a due date and cadence (weekly / monthly / quarterly / yearly); overdue and
   due-soon items surface on the Dashboard and behind a badged bell, and
   "mark paid" rolls a recurring reminder to its next date (optionally booking
-  the matching expense). In-app alerts — works on Android, iOS and Web.
+  the matching expense). In-app alerts on every platform, **plus real device
+  notifications** (in the phone's notification tray, even when the app is
+  closed) scheduled on the due date — Android & iOS.
+- 💰 **Budgets** — set a monthly spending limit per category; the dashboard
+  warns you when a category goes over.
+- 📤 **Export** — PDF statements, **CSV** (copy to Excel/Sheets), and (Drive
+  mode) the raw workbook.
+- 👪 **Family analytics** — who-spent-what across members each month.
 - 📊 **Reports** — **month-wise** and **year-wise** summaries, income-vs-expense
   charts, category pie chart, and **savings/spending targets** with
   planned-vs-actual progress.
@@ -224,9 +231,9 @@ lib/
 - Saves are written to Drive after each change. For heavy use you may want to
   batch writes or add offline caching (e.g. `shared_preferences`/local file)
   and a sync indicator.
-- Recurring **payment reminders** are now built in (in-app alerts on the
-  Dashboard + a badged bell). A natural next step is delivering them as **device
-  push notifications** (e.g. `flutter_local_notifications`), which needs a
-  one-time native setup and is Android/iOS only.
-- Possible future features: multi-currency conversion, budget rollover, CSV
-  export, and per-member spending analytics on the family workbook.
+- Recurring **payment reminders** are delivered both as in-app alerts AND as
+  **device notifications** (`flutter_local_notifications`) scheduled on the due
+  date — they appear in the phone's tray even when the app is closed
+  (Android/iOS; web shows in-app only).
+- Possible future features: multi-currency conversion, budget rollover, and
+  recurring-income reminders.

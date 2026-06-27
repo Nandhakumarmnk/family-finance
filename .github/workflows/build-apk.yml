@@ -55,12 +55,18 @@ jobs:
             sed -i 's#\(<manifest[^>]*>\)#\1\n    <uses-permission android:name="android.permission.USE_BIOMETRIC"/>#' "$MAN"
             echo "Declared USE_BIOMETRIC permission."
           fi
-          # Firebase Auth requires minSdk >= 23; the template uses
-          # flutter.minSdkVersion (currently lower). Pin it to 23.
+          if [ -f "$MAN" ] && ! grep -q "POST_NOTIFICATIONS" "$MAN"; then
+            sed -i 's#\(<manifest[^>]*>\)#\1\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>#' "$MAN"
+            echo "Declared POST_NOTIFICATIONS permission."
+          fi
+          # Pin minSdk to 26: Firebase Auth needs >=23, and
+          # flutter_local_notifications uses java.time which needs API 26 (so we
+          # avoid the brittle core-library-desugaring setup). The template uses
+          # flutter.minSdkVersion (currently lower).
           for GF in android/app/build.gradle android/app/build.gradle.kts; do
             if [ -f "$GF" ]; then
-              sed -i -E 's/minSdk(Version)?[ =]+flutter\.minSdkVersion/minSdk = 23/' "$GF"
-              echo "Set minSdk=23 in $GF"
+              sed -i -E 's/minSdk(Version)?[ =]+flutter\.minSdkVersion/minSdk = 26/' "$GF"
+              echo "Set minSdk=26 in $GF"
             fi
           done
 
