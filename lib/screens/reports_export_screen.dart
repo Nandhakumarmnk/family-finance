@@ -123,6 +123,17 @@ class _ReportsExportScreenState extends State<ReportsExportScreen> {
             busy: _busy,
             onTap: _busy ? null : () => _sharePdf(s, start, end, label),
           ),
+          if (s.canAttachFiles) ...[
+            const SizedBox(height: 10),
+            _ActionTile(
+              icon: Icons.cloud_upload_outlined,
+              color: const Color(0xFF6A4CCB),
+              title: 'Save PDF to cloud',
+              subtitle: 'Store it in your account and copy a shareable link',
+              busy: _busy,
+              onTap: _busy ? null : () => _saveToCloud(s, start, end, label),
+            ),
+          ],
           const SizedBox(height: 10),
           _ActionTile(
             icon: Icons.grid_on,
@@ -181,6 +192,28 @@ class _ReportsExportScreenState extends State<ReportsExportScreen> {
       );
     } catch (e) {
       AppFeedback.error('Could not build the PDF');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// Build the PDF and upload it to Cloud Storage, then copy a shareable link.
+  Future<void> _saveToCloud(
+      AppState s, DateTime start, DateTime end, String label) async {
+    setState(() => _busy = true);
+    try {
+      final bytes = await StatementService.build(s,
+          start: start, end: end, periodLabel: label);
+      final name = 'FamilyFinance_${label.replaceAll(' ', '_')}.pdf';
+      final url = await s.uploadReport(name, bytes);
+      if (url == null) {
+        AppFeedback.error('Could not save to cloud');
+        return;
+      }
+      await Clipboard.setData(ClipboardData(text: url));
+      AppFeedback.success('Saved to cloud — link copied');
+    } catch (e) {
+      AppFeedback.error('Could not save the report');
     } finally {
       if (mounted) setState(() => _busy = false);
     }

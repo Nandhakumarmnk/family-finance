@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../services/invite_service.dart';
@@ -17,11 +18,21 @@ class AddDetailsScreen extends StatefulWidget {
 
 class _AddDetailsScreenState extends State<AddDetailsScreen> {
   final _form = GlobalKey<FormState>();
+  final _picker = ImagePicker();
   late TextEditingController _name;
   late TextEditingController _phone;
   late TextEditingController _occupation;
   late TextEditingController _familyName;
   late String _currency;
+
+  Future<void> _pickPhoto() async {
+    final x = await _picker.pickImage(
+        source: ImageSource.gallery, maxWidth: 512, imageQuality: 80);
+    if (x == null) return;
+    final bytes = await x.readAsBytes();
+    if (!mounted) return;
+    await context.read<AppState>().updateProfilePhoto(bytes);
+  }
 
   @override
   void initState() {
@@ -80,16 +91,48 @@ class _AddDetailsScreenState extends State<AddDetailsScreen> {
           padding: const EdgeInsets.all(16),
           children: [
             Center(
-              child: CircleAvatar(
-                radius: 40,
-                backgroundImage: (p.photoUrl != null && p.photoUrl!.isNotEmpty)
-                    ? NetworkImage(p.photoUrl!)
-                    : null,
-                child: (p.photoUrl == null || p.photoUrl!.isEmpty)
-                    ? Text(p.displayName.isEmpty ? '?' : p.displayName[0])
-                    : null,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  CircleAvatar(
+                    radius: 40,
+                    backgroundImage:
+                        (p.avatarUrl != null && p.avatarUrl!.isNotEmpty)
+                            ? NetworkImage(p.avatarUrl!)
+                            : null,
+                    child: (p.avatarUrl == null || p.avatarUrl!.isEmpty)
+                        ? Text(p.displayName.isEmpty ? '?' : p.displayName[0])
+                        : null,
+                  ),
+                  if (s.canAttachFiles)
+                    Positioned(
+                      right: -4,
+                      bottom: -4,
+                      child: Material(
+                        color: Theme.of(context).colorScheme.primary,
+                        shape: const CircleBorder(),
+                        child: InkWell(
+                          customBorder: const CircleBorder(),
+                          onTap: _pickPhoto,
+                          child: Padding(
+                            padding: const EdgeInsets.all(6),
+                            child: Icon(Icons.camera_alt,
+                                size: 16,
+                                color: Theme.of(context).colorScheme.onPrimary),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
+            if (s.canAttachFiles && p.customPhotoUrl.isNotEmpty)
+              Center(
+                child: TextButton(
+                  onPressed: () => s.removeProfilePhoto(),
+                  child: const Text('Remove photo'),
+                ),
+              ),
             const SizedBox(height: 8),
             Center(child: Text(p.email)),
             const SizedBox(height: 24),

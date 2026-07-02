@@ -313,6 +313,49 @@ class AppState extends ChangeNotifier {
   }
 
   // --- profile / details -----------------------------------------------------
+  /// The avatar URL to display (custom uploaded photo, else the Google one).
+  String? get avatarUrl => _personal?.profile.avatarUrl;
+
+  /// Upload a new custom avatar; returns true on success. Persisted so it wins
+  /// over the Google account photo everywhere.
+  Future<bool> updateProfilePhoto(Uint8List bytes) async {
+    if (!canAttachFiles || _personal == null) return false;
+    try {
+      final url = await _storage!.uploadProfilePhoto(bytes);
+      _personal!.profile.customPhotoUrl = url;
+      await _persistPersonal();
+      _celebrate('Photo updated');
+      return true;
+    } catch (_) {
+      AppFeedback.error('Could not upload the photo');
+      return false;
+    }
+  }
+
+  /// Remove the custom avatar (falls back to the Google photo / initial).
+  Future<void> removeProfilePhoto() async {
+    if (_personal == null) return;
+    _personal!.profile.customPhotoUrl = '';
+    if (canAttachFiles) {
+      try {
+        await _storage!.deleteProfilePhoto();
+      } catch (_) {/* best-effort */}
+    }
+    await _persistPersonal();
+  }
+
+  /// Upload a generated PDF report; returns its shareable download URL, or null
+  /// if cloud files aren't available or the upload failed.
+  Future<String?> uploadReport(String fileName, Uint8List bytes) async {
+    if (!canAttachFiles) return null;
+    try {
+      return await _storage!.uploadReport(fileName, bytes);
+    } catch (_) {
+      AppFeedback.error('Could not upload the report');
+      return null;
+    }
+  }
+
   Future<void> updateProfile({
     String? displayName,
     String? phone,
