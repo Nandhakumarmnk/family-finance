@@ -6,8 +6,9 @@ import '../state/app_state.dart';
 import '../widgets/feedback.dart';
 
 /// One-time onboarding shown after sign-in when the user isn't in a family yet.
-/// Lets them either create a new family (becoming the **family head**), join an
-/// existing one with a code (as a **member**), or skip and use the app solo.
+/// Lets them either create a new family (becoming the **family head**), request
+/// to join an existing one with a code (the head approves), or skip and use the
+/// app solo. While a join request is awaiting approval it shows a waiting state.
 class FamilySetupScreen extends StatefulWidget {
   const FamilySetupScreen({super.key});
 
@@ -56,10 +57,57 @@ class _FamilySetupScreenState extends State<FamilySetupScreen> {
     final code = _code.text.trim();
     if (code.isEmpty) return;
     setState(() => _busy = true);
-    await context.read<AppState>().joinFamily(code);
+    final s = context.read<AppState>();
+    final messenger = ScaffoldMessenger.of(context);
+    final result = await s.joinFamily(code);
     if (!mounted) return;
     setState(() => _busy = false);
-    _finish();
+    switch (result) {
+      case JoinResult.joined:
+        _finish();
+        break;
+      case JoinResult.requested:
+        // The screen rebuilds into the waiting state (hasPendingJoin == true).
+        messenger.showSnackBar(const SnackBar(
+            content: Text('Request sent — waiting for the family head to '
+                'approve you.')));
+        setState(() {});
+        break;
+      case JoinResult.notFound:
+        messenger.showSnackBar(const SnackBar(
+            content: Text('No family found for that code. Check it and try '
+                'again.')));
+        break;
+      case JoinResult.invalidCode:
+        messenger.showSnackBar(
+            const SnackBar(content: Text('Enter a family code.')));
+        break;
+      case JoinResult.declined:
+      case JoinResult.error:
+        messenger.showSnackBar(SnackBar(
+            content: Text(s.error ?? 'Could not send the request. Try again.')));
+        break;
+    }
+  }
+
+  Future<void> _refresh(AppState s) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final r = await s.refreshPendingJoin();
+    if (!mounted) return;
+    switch (r) {
+      case JoinResult.joined:
+        messenger.showSnackBar(
+            const SnackBar(content: Text("You're in! 🎉")));
+        _finish();
+        break;
+      case JoinResult.declined:
+        messenger.showSnackBar(const SnackBar(
+            content: Text('Your request was declined or removed.')));
+        break;
+      default:
+        messenger.showSnackBar(const SnackBar(
+            content: Text('Still waiting for the family head to approve…')));
+    }
   }
 
   /// When this screen was pushed on top of the app (e.g. from a "no family"
@@ -70,8 +118,13 @@ class _FamilySetupScreenState extends State<FamilySetupScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final s = context.watch<AppState>();
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+
+    // Waiting for a head to approve a join request → show the waiting state.
+    if (s.hasPendingJoin) return _pendingView(theme, scheme, s);
+
     return Scaffold(
       body: SafeArea(
         child: Center(
@@ -111,6 +164,68 @@ class _FamilySetupScreenState extends State<FamilySetupScreen> {
     );
   }
 
+  Widget _pendingView(ThemeData theme, ColorScheme scheme, AppState s) {
+    final fam = s.pendingFamilyName.isEmpty ? 'the family' : s.pendingFamilyName;
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 460),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Icon(Icons.hourglass_top_rounded,
+                      size: 56, color: scheme.primary),
+                  const SizedBox(height: 16),
+                  Text('Waiting for approval',
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.headlineSmall
+                          ?.copyWith(fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Your request to join $fam has been sent. The family head '
+                    'needs to approve you before you can see the shared wallet '
+                    'and expenses.',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodyMedium
+                        ?.copyWith(color: scheme.onSurfaceVariant),
+                  ),
+                  const SizedBox(height: 28),
+                  FilledButton.icon(
+                    onPressed: s.busy ? null : () => _refresh(s),
+                    icon: s.busy
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.refresh_rounded),
+                    label: const Text('Check again'),
+                  ),
+                  const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: s.busy ? null : () => s.cancelPendingJoin(),
+                    child: const Text('Cancel request'),
+                  ),
+                  const Divider(height: 32),
+                  TextButton(
+                    onPressed: () {
+                      s.dismissFamilySetup();
+                      _finish();
+                    },
+                    child: const Text('Use solo for now'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   List<Widget> _chooser(ThemeData theme, ColorScheme scheme) => [
         _ChoiceCard(
           icon: Icons.shield_moon_outlined,
@@ -122,7 +237,7 @@ class _FamilySetupScreenState extends State<FamilySetupScreen> {
         _ChoiceCard(
           icon: Icons.group_add_outlined,
           title: 'Join my family',
-          subtitle: 'I was invited — I have a family code.',
+          subtitle: 'I have a family code — send a request to the head.',
           onTap: () => setState(() => _mode = _Mode.join),
         ),
         const SizedBox(height: 20),
@@ -158,8 +273,8 @@ class _FamilySetupScreenState extends State<FamilySetupScreen> {
         ),
         const SizedBox(height: 8),
         Text(
-          'You\'ll get a family code to share. Anyone with the code can join '
-          'and share the common wallet.',
+          'You\'ll get a family code to share. Anyone with the code can '
+          'request to join — you approve who actually gets in.',
           style: theme.textTheme.bodySmall,
         ),
         const SizedBox(height: 20),
@@ -197,8 +312,11 @@ class _FamilySetupScreenState extends State<FamilySetupScreen> {
           onSubmitted: (_) => _join(),
         ),
         const SizedBox(height: 8),
-        Text('Ask the family head for the code shown in their invite.',
-            style: theme.textTheme.bodySmall),
+        Text(
+          'Ask the family head for the code shown in their invite. They\'ll get '
+          'a request to approve before you can see the family\'s data.',
+          style: theme.textTheme.bodySmall,
+        ),
         const SizedBox(height: 20),
         FilledButton.icon(
           onPressed: _busy ? null : _join,
@@ -207,8 +325,8 @@ class _FamilySetupScreenState extends State<FamilySetupScreen> {
                   width: 18,
                   height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2))
-              : const Icon(Icons.login_rounded),
-          label: const Text('Join family'),
+              : const Icon(Icons.send_rounded),
+          label: const Text('Request to join'),
         ),
       ];
 }

@@ -89,7 +89,17 @@ Variables**.
   SDK automatically from `firebase_options.dart`.
 
 That's it — sign in with any Google account, create a family (you're the
-**head**), and share the **family code** to invite anyone, anywhere.
+**head**), and share the **family code** to invite anyone, anywhere. People who
+enter the code send you a **request to join**; nobody sees the family's data
+until you **approve** them from **Users / Master**. Only the head can add,
+remove, or change members — and the rules make the head role impossible to
+hijack, even by someone who has the code.
+
+> **Rolling out to existing users:** publish the updated `firestore.rules` and
+> ship the matching app build together. The new rules only let the **head**
+> change membership/roles, so older app versions (which rewrote the roster on
+> every save) will lose the ability to write *shared family* data until updated.
+> Personal data is unaffected.
 
 ---
 

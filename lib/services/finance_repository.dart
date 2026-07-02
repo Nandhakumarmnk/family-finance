@@ -6,6 +6,7 @@ import '../models/category.dart';
 import '../models/emi.dart';
 import '../models/expense.dart';
 import '../models/family_ledger.dart';
+import '../models/join_request.dart';
 import '../models/member.dart';
 import '../models/reminder.dart';
 import '../models/salary.dart';
@@ -24,9 +25,55 @@ abstract class FinanceStore {
   Future<void> savePersonal(PersonalData data);
   Future<FamilyData> loadFamily(String familyId, String familyName,
       {required Member creatorAsMember});
+
+  /// Persist shared FINANCES only (wallet + ledger) — writable by any member.
   Future<void> saveFamily(FamilyData data, {bool overwriteName});
+
+  /// Persist the ROSTER (family name + members + roles) — head only. On the
+  /// cloud backend this is the only write that touches membership; regular
+  /// members are blocked from it by the security rules.
+  Future<void> saveFamilyRoster(FamilyData data, {bool overwriteName});
+
   Future<void> trashFile(String fileId);
   Future<String?> fileWebLink(String fileId);
+
+  // --- head-approval join flow (cloud backend only) -------------------------
+  /// Look up a family's public-ish metadata by its exact code, or null if no
+  /// such family exists. Used to validate a code and to poll join status.
+  Future<FamilyMeta?> fetchFamilyMeta(String familyId);
+
+  /// File a request for the signed-in user to join [familyId]. Grants NO
+  /// access — the head must approve it.
+  Future<void> requestToJoin(String familyId,
+      {required String email, required String name, required String phone});
+
+  /// Whether the signed-in user still has an un-actioned request for [familyId]
+  /// (used to tell "still waiting" apart from "declined").
+  Future<bool> joinRequestPending(String familyId, String email);
+
+  /// The head's view: every pending request for [familyId].
+  Future<List<JoinRequest>> loadJoinRequests(String familyId);
+
+  /// Remove a request (the head declining, or the requester cancelling).
+  Future<void> declineJoinRequest(String familyId, String email);
+}
+
+/// Lightweight snapshot of a family doc, fetched by code without loading all
+/// its subcollections. Lets a prospective member check a code and poll whether
+/// the head has approved them (their email appearing in [memberEmails]).
+class FamilyMeta {
+  final String familyId;
+  final String familyName;
+  final String ownerEmail;
+  final List<String> memberEmails;
+  FamilyMeta({
+    required this.familyId,
+    required this.familyName,
+    required this.ownerEmail,
+    required this.memberEmails,
+  });
+
+  bool hasMember(String email) => memberEmails.contains(email);
 }
 
 /// Reads and writes the two Excel workbooks (personal + shared family) that
@@ -119,6 +166,8 @@ class FinanceRepository implements FinanceStore {
       currencyCode: profile.currencyCode,
       phone: profile.phone,
       occupation: profile.occupation,
+      pendingFamilyId: profile.pendingFamilyId,
+      pendingFamilyName: profile.pendingFamilyName,
     );
 
     final cats =
@@ -365,6 +414,38 @@ class FinanceRepository implements FinanceStore {
 
   /// Move a workbook to the Drive trash (used by "reset & start fresh").
   Future<void> trashFile(String fileId) => _drive.trashFile(fileId);
+
+  // On Drive the workbook is a single shared file, so the roster is saved the
+  // same way as the finances.
+  @override
+  Future<void> saveFamilyRoster(FamilyData data, {bool overwriteName = false}) =>
+      saveFamily(data, overwriteName: overwriteName);
+
+  // The head-approval join flow is a cloud-backend feature; on the legacy Drive
+  // backend access is granted by file sharing instead, so AppState uses the
+  // legacy instant-join path and never calls these.
+  @override
+  Future<FamilyMeta?> fetchFamilyMeta(String familyId) async =>
+      throw UnsupportedError('Join requests require the cloud backend.');
+
+  @override
+  Future<void> requestToJoin(String familyId,
+          {required String email,
+          required String name,
+          required String phone}) async =>
+      throw UnsupportedError('Join requests require the cloud backend.');
+
+  @override
+  Future<bool> joinRequestPending(String familyId, String email) async =>
+      throw UnsupportedError('Join requests require the cloud backend.');
+
+  @override
+  Future<List<JoinRequest>> loadJoinRequests(String familyId) async =>
+      throw UnsupportedError('Join requests require the cloud backend.');
+
+  @override
+  Future<void> declineJoinRequest(String familyId, String email) async =>
+      throw UnsupportedError('Join requests require the cloud backend.');
 }
 
 /// In-memory contents of the personal workbook.

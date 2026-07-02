@@ -16,6 +16,13 @@ class UserProfile {
   String phone;
   String occupation;
 
+  /// A family the user has ASKED to join but the head hasn't approved yet.
+  /// Empty once they're approved (moved into [familyId]) or the request is
+  /// cancelled/declined. Kept separate from [familyId] so a pending user gets
+  /// no access to the family's data until the head lets them in.
+  String pendingFamilyId;
+  String pendingFamilyName;
+
   UserProfile({
     required this.email,
     required this.displayName,
@@ -25,6 +32,8 @@ class UserProfile {
     this.currencyCode = 'INR',
     this.phone = '',
     this.occupation = '',
+    this.pendingFamilyId = '',
+    this.pendingFamilyName = '',
   });
 
   /// Row representation used when persisting to the `Profile` sheet.
@@ -37,8 +46,11 @@ class UserProfile {
         currencyCode,
         phone,
         occupation,
+        pendingFamilyId,
+        pendingFamilyName,
       ];
 
+  // New fields are APPENDED so older 7-column rows/docs still load cleanly.
   static const List<String> profileHeader = [
     'email',
     'displayName',
@@ -47,6 +59,8 @@ class UserProfile {
     'currencyCode',
     'phone',
     'occupation',
+    'pendingFamilyId',
+    'pendingFamilyName',
   ];
 
   factory UserProfile.fromRow(List<dynamic> r, {String? photoUrl}) {
@@ -60,6 +74,8 @@ class UserProfile {
       currencyCode: at(4).isEmpty ? 'INR' : at(4),
       phone: at(5),
       occupation: at(6),
+      pendingFamilyId: at(7),
+      pendingFamilyName: at(8),
     );
   }
 }
