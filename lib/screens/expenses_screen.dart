@@ -1,4 +1,7 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../models/expense.dart';
@@ -93,6 +96,7 @@ class ExpensesScreen extends StatelessWidget {
       onDismissed: (_) => context.read<AppState>().deleteExpense(e.id),
       child: Card(
         child: ListTile(
+          onTap: e.hasReceipt ? () => _viewReceipt(context, e.receiptUrl) : null,
           leading: CircleAvatar(
             backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
             child: Icon(
@@ -101,7 +105,16 @@ class ExpensesScreen extends StatelessWidget {
               color: Theme.of(context).colorScheme.onSecondaryContainer,
             ),
           ),
-          title: Text(e.category),
+          title: Row(
+            children: [
+              Flexible(child: Text(e.category)),
+              if (e.hasReceipt) ...[
+                const SizedBox(width: 6),
+                Icon(Icons.receipt_long,
+                    size: 15, color: Theme.of(context).colorScheme.primary),
+              ],
+            ],
+          ),
           subtitle: Text(
             '${Fmt.date(e.date)} • ${e.paymentMode}'
             '${e.fromFamilyWallet ? ' • Family wallet' : ''}'
@@ -110,6 +123,44 @@ class ExpensesScreen extends StatelessWidget {
           isThreeLine: e.notes.isNotEmpty,
           trailing: Text(Fmt.currency(e.amount, code: cur),
               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        ),
+      ),
+    );
+  }
+
+  /// Full-screen, pinch-to-zoom view of a receipt photo.
+  void _viewReceipt(BuildContext context, String url) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog(
+        insetPadding: const EdgeInsets.all(12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Align(
+              alignment: Alignment.centerRight,
+              child: IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: () => Navigator.pop(ctx),
+              ),
+            ),
+            Flexible(
+              child: InteractiveViewer(
+                child: Image.network(
+                  url,
+                  fit: BoxFit.contain,
+                  loadingBuilder: (c, child, progress) => progress == null
+                      ? child
+                      : const Padding(
+                          padding: EdgeInsets.all(40),
+                          child: CircularProgressIndicator()),
+                  errorBuilder: (c, err, s) => const Padding(
+                      padding: EdgeInsets.all(40),
+                      child: Text('Could not load the receipt.')),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -136,11 +187,13 @@ class _ExpenseFormState extends State<_ExpenseForm> {
   final _form = GlobalKey<FormState>();
   final _amount = TextEditingController();
   final _notes = TextEditingController();
+  final _picker = ImagePicker();
   late String _category;
   String _mode = 'UPI';
   DateTime _date = DateTime.now();
   bool _fromWallet = false;
   bool _saving = false;
+  Uint8List? _receiptBytes; // picked receipt photo, uploaded on save
 
   static const _modes = ['UPI', 'Cash', 'Card', 'Bank'];
 
@@ -158,18 +211,38 @@ class _ExpenseFormState extends State<_ExpenseForm> {
     super.dispose();
   }
 
+  Future<void> _pickReceipt() async {
+    final x = await _picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1600,
+      imageQuality: 70, // keep uploads small
+    );
+    if (x == null) return;
+    final bytes = await x.readAsBytes();
+    if (mounted) setState(() => _receiptBytes = bytes);
+  }
+
   Future<void> _submit() async {
     if (_saving) return; // guard against double/triple taps while saving
     if (!_form.currentState!.validate()) return;
     setState(() => _saving = true);
-    await context.read<AppState>().addExpense(Expense(
-          id: newId('exp'),
+    final app = context.read<AppState>();
+    final id = newId('exp');
+    // Upload the receipt first (if any) so the URL is stored with the expense.
+    var receiptUrl = '';
+    if (_receiptBytes != null) {
+      final url = await app.uploadReceipt(id, _receiptBytes!);
+      if (url != null) receiptUrl = url;
+    }
+    await app.addExpense(Expense(
+          id: id,
           date: _date,
           category: _category,
           amount: double.parse(_amount.text.trim()),
           paymentMode: _mode,
           notes: _notes.text.trim(),
           fromFamilyWallet: _fromWallet,
+          receiptUrl: receiptUrl,
         ));
     if (mounted) Navigator.pop(context);
   }
@@ -249,6 +322,36 @@ class _ExpenseFormState extends State<_ExpenseForm> {
                   value: _fromWallet,
                   onChanged: (v) => setState(() => _fromWallet = v),
                 ),
+              if (app.canAttachFiles) ...[
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: _receiptBytes == null
+                      ? OutlinedButton.icon(
+                          onPressed: _pickReceipt,
+                          icon: const Icon(Icons.attach_file, size: 18),
+                          label: const Text('Attach receipt'),
+                        )
+                      : Row(
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: Image.memory(_receiptBytes!,
+                                  width: 56, height: 56, fit: BoxFit.cover),
+                            ),
+                            const SizedBox(width: 12),
+                            const Text('Receipt attached'),
+                            const Spacer(),
+                            IconButton(
+                              tooltip: 'Remove',
+                              icon: const Icon(Icons.close),
+                              onPressed: () =>
+                                  setState(() => _receiptBytes = null),
+                            ),
+                          ],
+                        ),
+                ),
+              ],
               const SizedBox(height: 8),
               FilledButton(
                 onPressed: _saving ? null : _submit,

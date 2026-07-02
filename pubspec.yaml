@@ -27,6 +27,13 @@ dependencies:
   firebase_core: ^3.6.0
   firebase_auth: ^5.3.1
   cloud_firestore: ^5.4.4
+  # Cloud file storage (receipt photos, exported PDFs, profile pics). Needs the
+  # Blaze plan on the Firebase project, but stays within the free usage tier at
+  # household scale. Only active once firebase_options.dart holds real values.
+  firebase_storage: ^12.3.2
+
+  # Pick a receipt image from the gallery (no camera permission needed).
+  image_picker: ^1.1.2
 
   # Excel storage (dynamic-value API; stable and simple)
   excel: ^2.1.0

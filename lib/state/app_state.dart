@@ -1,5 +1,7 @@
 // `Category` is also the name of a Flutter foundation annotation, so hide it to
 // avoid an ambiguous-import clash with our own `Category` model below.
+import 'dart:typed_data';
+
 import 'package:flutter/foundation.dart' hide Category;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -21,6 +23,7 @@ import '../services/backend_service.dart';
 import '../services/drive_service.dart';
 import '../services/firestore_repository.dart';
 import '../services/notification_service.dart';
+import '../services/storage_service.dart';
 import '../utils/format.dart';
 import '../widgets/feedback.dart';
 import '../services/finance_repository.dart';
@@ -45,6 +48,7 @@ class AppState extends ChangeNotifier {
   late final AuthService _auth;
 
   FinanceStore? _repo;
+  StorageService? _storage;
   PersonalData? _personal;
   FamilyData? _family;
 
@@ -74,6 +78,10 @@ class AppState extends ChangeNotifier {
   FamilyData? get family => _family;
   bool get inFamily => (_personal?.profile.familyId ?? '').isNotEmpty;
   String get currency => _personal?.profile.currencyCode ?? 'INR';
+
+  /// Whether cloud file attachments (receipts, PDFs, avatars) are available —
+  /// only on the Firestore backend once signed in.
+  bool get canAttachFiles => _firestoreEnabled && _storage != null;
 
   /// True if the signed-in user is the family head (the Owner of the family).
   bool get isFamilyHead {
@@ -190,6 +198,7 @@ class AppState extends ChangeNotifier {
     _personal = null;
     _family = null;
     _repo = null;
+    _storage = null;
     status = AppStatus.signedOut;
     notifyListeners();
   }
@@ -226,6 +235,7 @@ class AppState extends ChangeNotifier {
     final account = _auth.account!;
     if (_firestoreEnabled) {
       _repo = FirestoreRepository(uid: account.uid);
+      _storage = StorageService(account.uid);
     } else {
       final client = await _auth.authenticatedClient();
       if (client == null) {
@@ -516,6 +526,18 @@ class AppState extends ChangeNotifier {
   }
 
   // --- expenses --------------------------------------------------------------
+  /// Upload a receipt image for [expenseId] and return its download URL, or
+  /// null if cloud files aren't available or the upload failed. Best-effort.
+  Future<String?> uploadReceipt(String expenseId, Uint8List bytes) async {
+    if (!canAttachFiles) return null;
+    try {
+      return await _storage!.uploadReceipt(expenseId, bytes);
+    } catch (_) {
+      AppFeedback.error('Could not upload the receipt');
+      return null;
+    }
+  }
+
   Future<void> addExpense(Expense e) async {
     _personal!.expenses.add(e);
     _logActivity('Added', 'Expense',
@@ -547,6 +569,8 @@ class AppState extends ChangeNotifier {
       final e = list[idx];
       list.removeAt(idx);
       _logActivity('Deleted', 'Expense', e.category, e.amount);
+      // Clean up the receipt photo too (fire-and-forget).
+      if (e.hasReceipt && canAttachFiles) _storage!.deleteReceipt(e.id);
     }
     if (_unmirrorFromFamily(id)) await _persistFamilyEntries();
     await _persistPersonal();

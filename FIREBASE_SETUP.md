@@ -4,9 +4,15 @@ This switches the app from "Google Drive, test users only" to a **free cloud
 backend (Cloud Firestore)** that works for **every Google user and family,
 worldwide**, with no OAuth verification and no server to run.
 
-Everything below is on Firebase's **Spark (free) plan** — **no credit card**.
-We deliberately do **not** use Cloud Functions (those would require the paid
-Blaze plan).
+The core app (Auth + Firestore) runs on Firebase's **Spark (free) plan** — **no
+credit card** — and we deliberately avoid Cloud Functions (those need Blaze).
+
+The **optional** file-attachment feature (receipt photos, exported PDFs, profile
+pictures) uses **Cloud Storage**, which Firebase now only provisions on the
+**Blaze (pay-as-you-go) plan**. Blaze keeps a free usage tier (≈5 GB stored,
+1 GB/day download), so at household scale it stays **$0** — but it does require a
+card on file. Setting it up is covered in the optional section below; skip it and
+the app works exactly as before, just without attachments.
 
 ---
 
@@ -67,6 +73,30 @@ Firebase console → **Firestore Database → Rules** → paste the contents of
 
 These keep each person's data private and isolate every family (a family is
 reachable only via its secret code — see the file's header for details).
+
+### 5b. (Optional) Enable file storage — receipts, PDFs, profile photos
+
+Skip this whole subsection to stay 100% free with no card; attachments just
+won't appear. To turn them on:
+
+1. **Upgrade to Blaze:** console → ⚙️ **Usage and billing** → **Details &
+   settings** → **Modify plan** → **Blaze**. Link a billing account (needs a
+   card).
+2. **Cap the spend so it can't surprise you:** console → **Budgets & alerts**
+   (Google Cloud Billing) → create a budget of e.g. **$1** with email alerts at
+   50/90/100%. At household scale you'll never approach the free tier anyway.
+3. **Enable Storage:** Build → **Storage** → **Get started** → **production
+   mode** → same location as Firestore.
+4. **Publish the storage rules:** console → **Storage → Rules** → paste the
+   contents of [`storage.rules`](storage.rules) → **Publish**. They keep every
+   file private to the user who uploaded it (`users/{uid}/…`) and cap uploads to
+   10 MB images/PDFs.
+5. Make sure `flutterfire configure` (step 4) captured a **storageBucket** in
+   `lib/firebase_options.dart` — it's added automatically once Storage exists.
+   Re-run `flutterfire configure` if you enabled Storage afterwards.
+
+That's it — the app detects the bucket and shows an **Attach receipt** option on
+expenses; receipts open full-screen with pinch-to-zoom.
 
 ## 6. Point Google sign-in at Firebase
 
