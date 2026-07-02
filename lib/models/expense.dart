@@ -12,6 +12,9 @@ class Expense {
   /// than the individual's own money.
   final bool fromFamilyWallet;
 
+  /// Download URL of a receipt/bill photo in Cloud Storage; '' if none.
+  final String receiptUrl;
+
   Expense({
     required this.id,
     required this.date,
@@ -20,7 +23,10 @@ class Expense {
     this.paymentMode = 'UPI',
     this.notes = '',
     this.fromFamilyWallet = false,
+    this.receiptUrl = '',
   });
+
+  bool get hasReceipt => receiptUrl.isNotEmpty;
 
   int get month => date.month;
   int get year => date.year;
@@ -35,8 +41,10 @@ class Expense {
         paymentMode,
         fromFamilyWallet ? 'yes' : 'no',
         notes,
+        receiptUrl,
       ];
 
+  // `receiptUrl` is appended last so older 9-column rows still load.
   static const List<String> header = [
     'id',
     'date',
@@ -47,6 +55,7 @@ class Expense {
     'paymentMode',
     'fromFamilyWallet',
     'notes',
+    'receiptUrl',
   ];
 
   factory Expense.fromRow(List<dynamic> r) {
@@ -59,6 +68,7 @@ class Expense {
       paymentMode: at(6).isEmpty ? 'UPI' : at(6),
       fromFamilyWallet: at(7).toLowerCase() == 'yes',
       notes: at(8),
+      receiptUrl: at(9),
     );
   }
 
