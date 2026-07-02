@@ -4,6 +4,7 @@ import 'package:flutter/material.dart' hide Category;
 import 'package:provider/provider.dart';
 
 import '../models/category.dart';
+import '../models/join_request.dart';
 import '../models/member.dart';
 import '../services/invite_service.dart';
 import '../state/app_state.dart';
@@ -15,16 +16,32 @@ import 'family_setup_screen.dart';
 /// roles and invitations (backed by the shared family workbook), plus the
 /// editable **expense category master** (icons + names, stored per user in the
 /// personal workbook).
-class MasterScreen extends StatelessWidget {
+class MasterScreen extends StatefulWidget {
   const MasterScreen({super.key});
+
+  @override
+  State<MasterScreen> createState() => _MasterScreenState();
+}
+
+class _MasterScreenState extends State<MasterScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // The head loads pending join requests to review; a no-op for everyone else.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<AppState>().loadJoinRequests();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final s = context.watch<AppState>();
+    final isHead = s.isFamilyHead;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Users / Master')),
-      floatingActionButton: s.inFamily
+      // Only the family head manages the roster.
+      floatingActionButton: (s.inFamily && isHead)
           ? FloatingActionButton.extended(
               onPressed: () => _memberDialog(context),
               icon: const Icon(Icons.person_add),
@@ -39,12 +56,25 @@ class MasterScreen extends StatelessWidget {
           if (s.inFamily) ...[
             _familyCard(context, s),
             const SizedBox(height: 8),
+            if (isHead && s.joinRequests.isNotEmpty) ...[
+              const SectionHeader('Requests to join'),
+              ...s.joinRequests.map((r) => _requestTile(context, s, r)),
+              const SizedBox(height: 8),
+            ],
             const SectionHeader('Family members'),
+            if (!isHead)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(
+                  'Only the family head can add, remove, or change members.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
             if (s.members.isEmpty)
               const EmptyState(
                   icon: Icons.groups_outlined, message: 'No members yet.')
             else
-              ...s.members.map((m) => _memberTile(context, s, m)),
+              ...s.members.map((m) => _memberTile(context, s, m, isHead)),
           ] else
             _noFamilyCard(context),
           const SizedBox(height: 16),
@@ -177,7 +207,7 @@ class MasterScreen extends StatelessWidget {
     );
   }
 
-  Widget _memberTile(BuildContext context, AppState s, Member m) {
+  Widget _memberTile(BuildContext context, AppState s, Member m, bool isHead) {
     final isSelf = m.email == s.profile?.email;
     return Card(
       child: ListTile(
@@ -195,19 +225,101 @@ class MasterScreen extends StatelessWidget {
         subtitle: Text('${m.email}\n${m.role} • ${m.relationship}'
             '${m.active ? '' : ' • inactive'}'),
         isThreeLine: true,
-        trailing: PopupMenuButton<String>(
-          onSelected: (v) {
-            if (v == 'edit') _memberDialog(context, existing: m);
-            if (v == 'remove' && !isSelf) s.removeMember(m.email);
-          },
-          itemBuilder: (_) => [
-            const PopupMenuItem(value: 'edit', child: Text('Edit')),
-            if (!isSelf)
-              const PopupMenuItem(value: 'remove', child: Text('Remove')),
+        // Editing/removing members is head-only; others see a read-only roster.
+        trailing: !isHead
+            ? null
+            : PopupMenuButton<String>(
+                onSelected: (v) {
+                  if (v == 'edit') _memberDialog(context, existing: m);
+                  if (v == 'remove' && !isSelf) s.removeMember(m.email);
+                },
+                itemBuilder: (_) => [
+                  const PopupMenuItem(value: 'edit', child: Text('Edit')),
+                  if (!isSelf)
+                    const PopupMenuItem(value: 'remove', child: Text('Remove')),
+                ],
+              ),
+      ),
+    );
+  }
+
+  /// A pending "request to join", shown to the head with Approve / Decline. The
+  /// head can pick the role the approved member gets.
+  Widget _requestTile(BuildContext context, AppState s, JoinRequest r) {
+    final name = r.name.trim().isEmpty ? r.email.split('@').first : r.name.trim();
+    return Card(
+      color: Theme.of(context).colorScheme.tertiaryContainer,
+      child: ListTile(
+        leading: const CircleAvatar(child: Icon(Icons.person_add_alt_1)),
+        title: Text(name),
+        subtitle: Text(r.email + (r.phone.isEmpty ? '' : '\n${r.phone}')),
+        isThreeLine: r.phone.isNotEmpty,
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextButton(
+              onPressed: () => s.declineJoinRequestFor(r),
+              child: const Text('Decline'),
+            ),
+            const SizedBox(width: 4),
+            FilledButton(
+              onPressed: () => _approveDialog(context, s, r),
+              child: const Text('Approve'),
+            ),
           ],
         ),
       ),
     );
+  }
+
+  /// Asks the head which role to grant, then approves the requester.
+  Future<void> _approveDialog(
+      BuildContext context, AppState s, JoinRequest r) async {
+    String role = 'Adult';
+    String relationship = 'Other';
+    final approved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) => AlertDialog(
+          title: Text('Approve ${r.name.isEmpty ? r.email : r.name}?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<String>(
+                value: role,
+                decoration: const InputDecoration(labelText: 'Role'),
+                // The head can't mint another Owner from here.
+                items: Member.roles
+                    .where((x) => x != 'Owner')
+                    .map((x) => DropdownMenuItem(value: x, child: Text(x)))
+                    .toList(),
+                onChanged: (v) => setS(() => role = v ?? role),
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                value: relationship,
+                decoration: const InputDecoration(labelText: 'Relationship'),
+                items: Member.relationships
+                    .map((x) => DropdownMenuItem(value: x, child: Text(x)))
+                    .toList(),
+                onChanged: (v) => setS(() => relationship = v ?? relationship),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel')),
+            FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Approve')),
+          ],
+        ),
+      ),
+    );
+    if (approved == true) {
+      await s.approveJoinRequest(r, role: role, relationship: relationship);
+    }
   }
 
   // --- category master -------------------------------------------------------

@@ -62,7 +62,10 @@ class _HomeShellState extends State<HomeShell> {
             ),
           _reminderBell(context, state),
           PopupMenuButton<String>(
-            icon: _avatar(state),
+            // Badge the menu when the head has join requests waiting.
+            icon: state.pendingRequestCount > 0
+                ? Badge.count(count: state.pendingRequestCount, child: _avatar(state))
+                : _avatar(state),
             onSelected: (v) => _onMenu(context, v),
             itemBuilder: (_) => [
               PopupMenuItem(
@@ -101,7 +104,13 @@ class _HomeShellState extends State<HomeShell> {
               const PopupMenuItem(value: 'appearance', child: _MenuRow(Icons.palette_outlined, 'Appearance')),
               if (BackendService.isConfigured)
                 const PopupMenuItem(value: 'report', child: _MenuRow(Icons.mark_email_read_outlined, 'Email me a report')),
-              const PopupMenuItem(value: 'master', child: _MenuRow(Icons.groups, 'Users / Master')),
+              PopupMenuItem(
+                  value: 'master',
+                  child: _MenuRow(
+                      Icons.groups,
+                      state.pendingRequestCount > 0
+                          ? 'Users / Master (${state.pendingRequestCount})'
+                          : 'Users / Master')),
               const PopupMenuDivider(),
               const PopupMenuItem(value: 'signout', child: _MenuRow(Icons.logout, 'Sign out')),
             ],

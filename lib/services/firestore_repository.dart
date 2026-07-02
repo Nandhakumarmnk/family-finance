@@ -6,6 +6,7 @@ import '../models/category.dart';
 import '../models/emi.dart';
 import '../models/expense.dart';
 import '../models/family_ledger.dart';
+import '../models/join_request.dart';
 import '../models/member.dart';
 import '../models/reminder.dart';
 import '../models/salary.dart';
@@ -100,6 +101,8 @@ class FirestoreRepository implements FinanceStore {
       currencyCode: stored.currencyCode,
       phone: stored.phone,
       occupation: stored.occupation,
+      pendingFamilyId: stored.pendingFamilyId,
+      pendingFamilyName: stored.pendingFamilyName,
     );
 
     List<T> listOf<T>(
@@ -170,21 +173,16 @@ class FirestoreRepository implements FinanceStore {
         ledger: [],
         tombstones: {},
       );
-      await _writeFamily(data, ownerEmail: creatorAsMember.email);
+      await _createFamily(data, creatorAsMember.email);
       return data;
     }
 
     final d = snap.data()!;
     final storedName = (d['familyName'] as String?) ?? '';
-    // Join: if we're not yet listed in this family, add ourselves to the
-    // member-emails list first so the security rules let us read its entries.
-    final memberEmails =
-        ((d['memberEmails'] as List?) ?? const []).map((e) => '$e').toList();
-    if (!memberEmails.contains(creatorAsMember.email)) {
-      await famRef.update({
-        'memberEmails': FieldValue.arrayUnion([creatorAsMember.email]),
-      });
-    }
+    // NOTE: we no longer silently add the caller to `memberEmails` here — that
+    // was the hole that let anyone with a code join (or take over) a family.
+    // A prospective member now files a join request and the head approves it;
+    // loadFamily is only reached once the caller is already an approved member.
     final members =
         await _readSub(famRef.collection('members'), Member.header, Member.fromRow);
     final wallet = await _readSub(
@@ -212,22 +210,56 @@ class FirestoreRepository implements FinanceStore {
     return q.docs.map((doc) => fromRow(_mapToRow(header, doc.data()))).toList();
   }
 
+  /// Shared FINANCES only (wallet + ledger). Any approved member may call this;
+  /// it never touches the family doc, membership, or roles — so a member adding
+  /// an expense can't rewrite who's in the family or promote themselves.
   @override
-  Future<void> saveFamily(FamilyData data, {bool overwriteName = false}) =>
-      _writeFamily(data);
-
-  Future<void> _writeFamily(FamilyData data, {String? ownerEmail}) async {
+  Future<void> saveFamily(FamilyData data, {bool overwriteName = false}) async {
     final famRef = _families.doc(data.familyId);
+    final ops = <void Function(WriteBatch)>[];
+    await _collectReconcile(
+        ops,
+        famRef.collection('wallet'),
+        {for (final w in data.wallet) w.id: _rowToMap(WalletEntry.header, w.toRow())});
+    await _collectReconcile(
+        ops,
+        famRef.collection('ledger'),
+        {for (final l in data.ledger) l.id: _rowToMap(FamilyLedgerEntry.header, l.toRow())});
+    await _commitChunked(ops);
+  }
 
-    final famDoc = <String, dynamic>{
+  /// The ROSTER: family name + memberEmails + the members/roles subcollection.
+  /// The rules only permit the head to do this, so it's the single choke point
+  /// for who belongs to the family and what role they hold.
+  @override
+  Future<void> saveFamilyRoster(FamilyData data,
+      {bool overwriteName = false}) async {
+    final famRef = _families.doc(data.familyId);
+    await famRef.set({
       'familyName': data.familyName,
       'memberEmails': data.members.map((m) => m.email).toList(),
       'updatedAt': FieldValue.serverTimestamp(),
-    };
-    if (ownerEmail != null) famDoc['ownerEmail'] = ownerEmail;
-    // Commit the family doc FIRST so its memberEmails are in place before any
-    // subcollection write — the rules authorise those against this doc.
-    await famRef.set(famDoc, SetOptions(merge: true));
+    }, SetOptions(merge: true));
+
+    final ops = <void Function(WriteBatch)>[];
+    await _collectReconcile(
+        ops,
+        famRef.collection('members'),
+        {for (final m in data.members) _key(m.email): _rowToMap(Member.header, m.toRow())});
+    await _commitChunked(ops);
+  }
+
+  /// First-time creation of a family, by its head. Writes the family doc
+  /// (stamping `ownerEmail` — which the rules pin for good) plus the initial
+  /// members / wallet / ledger.
+  Future<void> _createFamily(FamilyData data, String ownerEmail) async {
+    final famRef = _families.doc(data.familyId);
+    await famRef.set({
+      'familyName': data.familyName,
+      'ownerEmail': ownerEmail,
+      'memberEmails': data.members.map((m) => m.email).toList(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
 
     final ops = <void Function(WriteBatch)>[];
     await _collectReconcile(
@@ -242,8 +274,72 @@ class FirestoreRepository implements FinanceStore {
         ops,
         famRef.collection('ledger'),
         {for (final l in data.ledger) l.id: _rowToMap(FamilyLedgerEntry.header, l.toRow())});
-
     await _commitChunked(ops);
+  }
+
+  // --- head-approval join flow ----------------------------------------------
+  @override
+  Future<FamilyMeta?> fetchFamilyMeta(String familyId) async {
+    final snap = await _families.doc(familyId).get();
+    if (!snap.exists) return null;
+    final d = snap.data()!;
+    return FamilyMeta(
+      familyId: familyId,
+      familyName: (d['familyName'] as String?) ?? '',
+      ownerEmail: (d['ownerEmail'] as String?) ?? '',
+      memberEmails:
+          ((d['memberEmails'] as List?) ?? const []).map((e) => '$e').toList(),
+    );
+  }
+
+  @override
+  Future<void> requestToJoin(String familyId,
+      {required String email,
+      required String name,
+      required String phone}) async {
+    await _families
+        .doc(familyId)
+        .collection('joinRequests')
+        .doc(_key(email))
+        .set({
+      'email': email,
+      'name': name,
+      'phone': phone,
+      'requestedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  @override
+  Future<bool> joinRequestPending(String familyId, String email) async {
+    final snap = await _families
+        .doc(familyId)
+        .collection('joinRequests')
+        .doc(_key(email))
+        .get();
+    return snap.exists;
+  }
+
+  @override
+  Future<List<JoinRequest>> loadJoinRequests(String familyId) async {
+    final q =
+        await _families.doc(familyId).collection('joinRequests').get();
+    return q.docs.map((doc) {
+      final d = doc.data();
+      return JoinRequest(
+        email: (d['email'] as String?) ?? '',
+        name: (d['name'] as String?) ?? '',
+        phone: (d['phone'] as String?) ?? '',
+      );
+    }).toList();
+  }
+
+  @override
+  Future<void> declineJoinRequest(String familyId, String email) async {
+    await _families
+        .doc(familyId)
+        .collection('joinRequests')
+        .doc(_key(email))
+        .delete();
   }
 
   /// Add set-ops for every desired doc and delete-ops for docs no longer

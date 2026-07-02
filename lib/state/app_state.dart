@@ -9,6 +9,7 @@ import '../models/category.dart';
 import '../models/emi.dart';
 import '../models/expense.dart';
 import '../models/family_ledger.dart';
+import '../models/join_request.dart';
 import '../models/member.dart';
 import '../models/reminder.dart';
 import '../models/salary.dart';
@@ -25,6 +26,16 @@ import '../widgets/feedback.dart';
 import '../services/finance_repository.dart';
 
 enum AppStatus { initializing, signedOut, signedIn, error }
+
+/// Outcome of attempting to join a family, so the UI can respond precisely.
+enum JoinResult {
+  joined, // fully in (legacy, or approved re-join)
+  requested, // request filed — waiting for the head to approve
+  declined, // request was removed / family gone
+  notFound, // no family for that code
+  invalidCode, // empty / malformed code
+  error, // something went wrong
+}
 
 /// Single source of truth for the UI. Owns auth, the two workbooks, the
 /// selected reporting period, and all mutating operations (which persist to
@@ -236,9 +247,18 @@ class AppState extends ChangeNotifier {
 
     if (inFamily) {
       await _loadFamily();
+    } else if (hasPendingJoin) {
+      // Approved while we were away? Finalize the join now; otherwise stay
+      // pending. Best-effort — never blocks sign-in.
+      try {
+        await refreshPendingJoin();
+      } catch (_) {/* transient */}
     }
     status = AppStatus.signedIn;
     notifyListeners();
+
+    // The head surfaces any pending join requests (no-op for everyone else).
+    await loadJoinRequests();
 
     // Schedule device notifications for upcoming reminders.
     _syncNotifications();
@@ -465,7 +485,7 @@ class AppState extends ChangeNotifier {
     }
     _logActivity('Paid', 'Reminder', r.title, r.amount);
 
-    if (familyChanged) await _persistFamily();
+    if (familyChanged) await _persistFamilyEntries();
     await _persistPersonal();
     _celebrate(addExpense && r.amount > 0
         ? 'Marked paid · expense added'
@@ -478,7 +498,7 @@ class AppState extends ChangeNotifier {
     _logActivity('Added', 'Income', s.source, s.amount);
     final shared = _mirrorToFamily(
         id: s.id, date: s.date, type: 'income', category: s.source, amount: s.amount, notes: s.notes);
-    if (shared) await _persistFamily();
+    if (shared) await _persistFamilyEntries();
     await _persistPersonal();
     _celebrate('Income added');
   }
@@ -491,7 +511,7 @@ class AppState extends ChangeNotifier {
       list.removeAt(idx);
       _logActivity('Deleted', 'Income', s.source, s.amount);
     }
-    if (_unmirrorFromFamily(id)) await _persistFamily();
+    if (_unmirrorFromFamily(id)) await _persistFamilyEntries();
     await _persistPersonal();
   }
 
@@ -515,7 +535,7 @@ class AppState extends ChangeNotifier {
       ));
       familyChanged = true;
     }
-    if (familyChanged) await _persistFamily();
+    if (familyChanged) await _persistFamilyEntries();
     await _persistPersonal();
     _celebrate('Expense added');
   }
@@ -528,7 +548,7 @@ class AppState extends ChangeNotifier {
       list.removeAt(idx);
       _logActivity('Deleted', 'Expense', e.category, e.amount);
     }
-    if (_unmirrorFromFamily(id)) await _persistFamily();
+    if (_unmirrorFromFamily(id)) await _persistFamilyEntries();
     await _persistPersonal();
   }
 
@@ -590,41 +610,150 @@ class AppState extends ChangeNotifier {
   }
 
   // --- family / multi-user ---------------------------------------------------
-  Future<void> createOrJoinFamily(String familyId, String familyName) async {
-    final p = _personal!.profile;
-    p.familyId = familyId.trim();
-    p.familyName = familyName.trim();
-    // Load first: when joining an existing family this adopts its shared name
-    // into the profile, so we persist the correct name rather than the typed one.
-    await _loadFamily();
-    await _persistPersonal();
-    // One-time backfill: push this user's existing income/expenses into the
-    // shared ledger so they show up in the family report immediately.
-    if (_backfillFamilyLedger()) await _persistFamily();
-    notifyListeners();
-  }
+
+  /// A family the user has requested to join but the head hasn't approved yet.
+  String get pendingFamilyId => _personal?.profile.pendingFamilyId ?? '';
+  String get pendingFamilyName => _personal?.profile.pendingFamilyName ?? '';
+
+  /// True while the user is waiting for a head to approve their join request.
+  bool get hasPendingJoin => pendingFamilyId.isNotEmpty && !inFamily;
 
   /// Create a brand-new family with the signed-in user as the **head** (Owner).
   /// A random, hard-to-guess family code is generated and used as the shared
-  /// Family ID; share it with relatives so they can join.
+  /// Family ID; share it with relatives so they can request to join.
   Future<void> createFamily(String familyName) async {
-    final code = generateFamilyCode();
-    await createOrJoinFamily(code, familyName);
+    final p = _personal!.profile;
+    p.familyId = generateFamilyCode();
+    p.familyName = familyName.trim();
+    p.pendingFamilyId = '';
+    p.pendingFamilyName = '';
+    // Load first so the shared family doc (with us stamped as owner) exists.
+    await _loadFamily();
+    await _persistPersonal();
+    // One-time backfill: push our existing income/expenses into the shared
+    // ledger so they show up in the family report immediately.
+    if (_backfillFamilyLedger()) await _persistFamilyEntries();
     _familySetupDismissed = true; // setup is complete
+    notifyListeners();
   }
 
-  /// Join an existing family by its shared code (from an invite). The user is
-  /// added to the roster as a member (not the head).
-  Future<void> joinFamily(String familyCode) async {
+  /// Ask to join an existing family by its shared code (from an invite).
+  ///
+  /// On the cloud backend this only FILES A REQUEST — the head must approve it
+  /// before the user gets any access. On the legacy Drive backend, where access
+  /// is controlled by file sharing, it joins immediately.
+  Future<JoinResult> joinFamily(String familyCode) async {
     final code = familyCode.trim();
-    if (code.isEmpty) return;
-    await createOrJoinFamily(code, '');
-    await _ensureSelfMember();
-    _familySetupDismissed = true; // setup is complete
+    if (code.isEmpty) return JoinResult.invalidCode;
+    if (!_firestoreEnabled) return _legacyJoin(code);
+
+    _setBusy(true);
+    try {
+      final meta = await _repo!.fetchFamilyMeta(code);
+      if (meta == null) return JoinResult.notFound;
+
+      final p = _personal!.profile;
+      // Already approved (e.g. re-joining on a new device) → go straight in.
+      if (meta.hasMember(p.email)) {
+        await _finalizeJoin(meta);
+        return JoinResult.joined;
+      }
+      // File a pending request and remember it so we can poll for approval.
+      await _repo!.requestToJoin(code,
+          email: p.email, name: p.displayName, phone: p.phone);
+      p.pendingFamilyId = code;
+      p.pendingFamilyName = meta.familyName;
+      await _persistPersonal();
+      notifyListeners();
+      return JoinResult.requested;
+    } catch (e) {
+      error = _friendlyError(e);
+      return JoinResult.error;
+    } finally {
+      _setBusy(false);
+    }
   }
 
-  /// Ensure the signed-in user appears in the family roster (as a member) after
-  /// joining an existing family they weren't pre-registered in.
+  /// Legacy Drive join: access is by file sharing, so join right away.
+  Future<JoinResult> _legacyJoin(String code) async {
+    final p = _personal!.profile;
+    p.familyId = code;
+    p.familyName = '';
+    await _loadFamily();
+    await _persistPersonal();
+    if (_backfillFamilyLedger()) await _persistFamilyEntries();
+    await _ensureSelfMember();
+    _familySetupDismissed = true;
+    notifyListeners();
+    return JoinResult.joined;
+  }
+
+  /// Re-check a pending join. [JoinResult.joined] once the head approves,
+  /// [JoinResult.declined] if the request is gone, else [JoinResult.requested].
+  Future<JoinResult> refreshPendingJoin() async {
+    if (!hasPendingJoin || !_firestoreEnabled) return JoinResult.requested;
+    _setBusy(true);
+    try {
+      final code = pendingFamilyId;
+      final p = _personal!.profile;
+      final meta = await _repo!.fetchFamilyMeta(code);
+      if (meta == null) {
+        await _clearPending();
+        return JoinResult.declined; // family deleted
+      }
+      if (meta.hasMember(p.email)) {
+        await _finalizeJoin(meta);
+        return JoinResult.joined;
+      }
+      final stillPending = await _repo!.joinRequestPending(code, p.email);
+      if (!stillPending) {
+        await _clearPending();
+        return JoinResult.declined;
+      }
+      return JoinResult.requested;
+    } catch (_) {
+      return JoinResult.requested; // transient — keep waiting
+    } finally {
+      _setBusy(false);
+    }
+  }
+
+  /// Cancel a pending join request.
+  Future<void> cancelPendingJoin() async {
+    if (!hasPendingJoin) return;
+    final code = pendingFamilyId;
+    final email = _personal!.profile.email;
+    if (_firestoreEnabled) {
+      try {
+        await _repo!.declineJoinRequest(code, email);
+      } catch (_) {/* best-effort */}
+    }
+    await _clearPending();
+  }
+
+  Future<void> _clearPending() async {
+    final p = _personal!.profile;
+    p.pendingFamilyId = '';
+    p.pendingFamilyName = '';
+    await _persistPersonal();
+    notifyListeners();
+  }
+
+  /// Complete a join once approved: adopt the family and load its data.
+  Future<void> _finalizeJoin(FamilyMeta meta) async {
+    final p = _personal!.profile;
+    p.familyId = meta.familyId;
+    p.familyName = meta.familyName;
+    p.pendingFamilyId = '';
+    p.pendingFamilyName = '';
+    await _loadFamily();
+    await _persistPersonal();
+    if (_backfillFamilyLedger()) await _persistFamilyEntries();
+    _familySetupDismissed = true;
+    notifyListeners();
+  }
+
+  /// Ensure the signed-in user appears in the family roster (legacy Drive join).
   Future<void> _ensureSelfMember() async {
     if (_family == null || _personal == null) return;
     final p = _personal!.profile;
@@ -636,7 +765,64 @@ class AppState extends ChangeNotifier {
       relationship: 'Other',
       phone: p.phone,
     ));
-    await _persistFamily();
+    await _persistFamilyRoster();
+  }
+
+  // --- join requests (head only) --------------------------------------------
+  List<JoinRequest> _joinRequests = const [];
+  List<JoinRequest> get joinRequests => _joinRequests;
+  int get pendingRequestCount => _joinRequests.length;
+
+  /// Load pending join requests for the head to review. No-op unless the user
+  /// is the family head on the cloud backend.
+  Future<void> loadJoinRequests() async {
+    if (!_firestoreEnabled || !isFamilyHead || !inFamily) {
+      _joinRequests = const [];
+      notifyListeners();
+      return;
+    }
+    try {
+      _joinRequests = await _repo!.loadJoinRequests(familyCode);
+    } catch (_) {
+      _joinRequests = const [];
+    }
+    notifyListeners();
+  }
+
+  /// Approve a requester into the roster with [role], then clear their request.
+  /// Head-only (the security rules also enforce this).
+  Future<void> approveJoinRequest(JoinRequest req,
+      {String role = 'Adult', String relationship = 'Other'}) async {
+    if (!isFamilyHead || _family == null) return;
+    final member = Member(
+      email: req.email,
+      name: req.name.trim().isEmpty ? req.email.split('@').first : req.name.trim(),
+      role: role,
+      relationship: relationship,
+      phone: req.phone,
+    );
+    final idx = _family!.members.indexWhere((m) => m.email == req.email);
+    if (idx >= 0) {
+      _family!.members[idx] = member;
+    } else {
+      _family!.members.add(member);
+    }
+    await _persistFamilyRoster();
+    try {
+      await _repo!.declineJoinRequest(familyCode, req.email); // clear request
+    } catch (_) {/* best-effort */}
+    _joinRequests = _joinRequests.where((r) => r.email != req.email).toList();
+    _celebrate('${member.name} approved');
+  }
+
+  /// Decline a pending request without granting access. Head-only.
+  Future<void> declineJoinRequestFor(JoinRequest req) async {
+    if (!isFamilyHead) return;
+    try {
+      await _repo!.declineJoinRequest(familyCode, req.email);
+    } catch (_) {/* best-effort */}
+    _joinRequests = _joinRequests.where((r) => r.email != req.email).toList();
+    notifyListeners();
   }
 
   /// Skip family setup and use the app solo (personal finance only). Remembered
@@ -656,9 +842,13 @@ class AppState extends ChangeNotifier {
   Future<void> renameFamily(String newName) async {
     final name = newName.trim();
     if (name.isEmpty || _personal == null) return;
+    if (!isFamilyHead) {
+      AppFeedback.error('Only the family head can rename the family');
+      return;
+    }
     _personal!.profile.familyName = name;
     _family?.familyName = name; // so the dashboard / wallet headers update now
-    if (_family != null) await _persistFamily(overwriteName: true);
+    if (_family != null) await _persistFamilyRoster(overwriteName: true);
     await _persistPersonal();
     _celebrate('Family name updated');
   }
@@ -710,6 +900,10 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> addOrUpdateMember(Member m) async {
+    if (!isFamilyHead) {
+      AppFeedback.error('Only the family head can manage members');
+      return;
+    }
     final idx = _family!.members.indexWhere((e) => e.email == m.email);
     final isNew = idx < 0;
     if (idx >= 0) {
@@ -717,14 +911,23 @@ class AppState extends ChangeNotifier {
     } else {
       _family!.members.add(m);
     }
-    await _persistFamily();
+    await _persistFamilyRoster();
     _celebrate(isNew ? 'Member added' : 'Member updated');
   }
 
   Future<void> removeMember(String email) async {
+    if (!isFamilyHead) {
+      AppFeedback.error('Only the family head can manage members');
+      return;
+    }
+    // The head can't remove themselves — that would orphan the family.
+    if (email == _personal?.profile.email) {
+      AppFeedback.error("You're the family head — you can't remove yourself");
+      return;
+    }
     _family!.members.removeWhere((e) => e.email == email);
     _family!.tombstones.add(email); // so the removal syncs to other members
-    await _persistFamily();
+    await _persistFamilyRoster();
   }
 
   // --- common wallet ---------------------------------------------------------
@@ -733,7 +936,7 @@ class AppState extends ChangeNotifier {
     final kind = e.direction == WalletDirection.topUp ? 'Top-up' : 'Spend';
     _logActivity('Added', 'Wallet',
         '$kind${e.purpose.isEmpty ? '' : ' — ${e.purpose}'}', e.amount);
-    await _persistFamily();
+    await _persistFamilyEntries();
     await _persistPersonal();
     _celebrate(e.direction == WalletDirection.topUp
         ? 'Wallet topped up'
@@ -750,7 +953,7 @@ class AppState extends ChangeNotifier {
       final kind = e.direction == WalletDirection.topUp ? 'Top-up' : 'Spend';
       _logActivity('Deleted', 'Wallet', kind, e.amount);
     }
-    await _persistFamily();
+    await _persistFamilyEntries();
     await _persistPersonal();
   }
 
@@ -962,14 +1165,31 @@ class AppState extends ChangeNotifier {
     NotificationService.sync(reminders, currency: currency);
   }
 
-  Future<void> _persistFamily({bool overwriteName = false}) async {
+  /// Persist shared FINANCES (wallet + ledger). Any member may do this.
+  Future<void> _persistFamilyEntries() async {
     error = null;
     notifyListeners();
     _setBusy(true);
     try {
-      await _repo!.saveFamily(_family!, overwriteName: overwriteName);
+      await _repo!.saveFamily(_family!);
     } catch (e) {
       error = 'Could not save family workbook: $e';
+    } finally {
+      _setBusy(false);
+    }
+  }
+
+  /// Persist the ROSTER (name + members + roles). Head-only server-side; the
+  /// callers already gate on [isFamilyHead], so a failure here means the rules
+  /// rejected a non-head — surfaced as a soft error.
+  Future<void> _persistFamilyRoster({bool overwriteName = false}) async {
+    error = null;
+    notifyListeners();
+    _setBusy(true);
+    try {
+      await _repo!.saveFamilyRoster(_family!, overwriteName: overwriteName);
+    } catch (e) {
+      error = 'Could not save family members: $e';
     } finally {
       _setBusy(false);
     }

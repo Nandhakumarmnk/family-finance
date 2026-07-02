@@ -7,10 +7,14 @@ rules_version = '2';
 //  * A family is reachable only by knowing its secret **family code** (the
 //    document id, e.g. FAM-7KQ4-9XPM) — you can fetch a family by its exact id
 //    but can NEVER list all families, so codes can't be enumerated.
-//  * Reading/writing a family's entries (members, wallet, ledger) requires
-//    being in that family's `memberEmails` list. So when the head **removes**
-//    someone, that person immediately loses access. A new member adds their own
-//    email to `memberEmails` once (the "join" step) and is then a member.
+//  * The user who creates a family becomes its **head** (`ownerEmail`). That
+//    field is set once at creation and can NEVER change — nobody can promote
+//    themselves to head, even if they know the code.
+//  * Access to a family's finances requires being in `memberEmails`. Only the
+//    HEAD edits that list (and the members/roles roster), so a code-holder can
+//    only *request* to join — the head must approve them.
+//  * Approved members can read the family and read/write its shared finances
+//    (wallet + ledger), but can NOT touch membership or roles.
 //
 // Paste these in: Firebase console -> Firestore Database -> Rules -> Publish.
 service cloud.firestore {
@@ -30,31 +34,78 @@ service cloud.firestore {
 
     // --- Shared family workbook --------------------------------------------
     match /families/{familyId} {
+
+      // Evaluated against the family doc itself (family-doc reads/writes).
+      function isOwner() {
+        return signedIn() && resource.data.ownerEmail == email();
+      }
       function isMember() {
         return signedIn()
           && resource.data.memberEmails is list
           && email() in resource.data.memberEmails;
       }
-      // Allow a user to add ONLY themselves to a family they know the code for.
-      function isJoiningSelf() {
-        return signedIn()
-          && request.resource.data.memberEmails is list
-          && email() in request.resource.data.memberEmails;
+      // The head (owner) can never be reassigned after creation.
+      function ownerUnchanged() {
+        return request.resource.data.ownerEmail == resource.data.ownerEmail;
       }
 
-      allow get: if signedIn();          // fetch by secret code; no `list`
-      allow create: if signedIn()
-                    && request.resource.data.ownerEmail == email();
-      allow update: if isMember() || isJoiningSelf();
-      allow delete: if signedIn() && resource.data.ownerEmail == email();
+      // Subcollection rules can't see the parent via `resource`, so fetch it.
+      function familyData() {
+        return get(/databases/$(database)/documents/families/$(familyId)).data;
+      }
+      function isFamilyOwner() {
+        return signedIn() && familyData().ownerEmail == email();
+      }
+      function isFamilyMember() {
+        return signedIn()
+          && familyData().memberEmails is list
+          && email() in familyData().memberEmails;
+      }
 
-      // Members / wallet / ledger entries — only current members of THIS family.
-      match /{sub}/{docId} {
-        function familyMembers() {
-          return get(/databases/$(database)/documents/families/$(familyId))
-              .data.memberEmails;
-        }
-        allow read, write: if signedIn() && email() in familyMembers();
+      // Fetch a family by its EXACT code (never `list`) so a prospective member
+      // can request to join and poll whether the head approved them. Codes are
+      // random and unlistable, so they can't be enumerated.
+      allow get: if signedIn();
+
+      // The creator becomes the head and the sole initial member.
+      allow create: if signedIn()
+        && request.resource.data.ownerEmail == email()
+        && request.resource.data.memberEmails.hasOnly([email()]);
+
+      // Only the head edits the family doc — rename, and approve/remove members
+      // by editing memberEmails. `ownerEmail` can NEVER change: this is what
+      // blocks a code-holder from making themselves the head.
+      allow update: if isOwner() && ownerUnchanged();
+
+      // Only the head can delete the whole family.
+      allow delete: if isOwner();
+
+      // Roster + roles — HEAD ONLY. Stops any member from minting an
+      // "Owner"/"Child" record, changing roles, or removing the head.
+      match /members/{docId} {
+        allow read: if isFamilyMember() || isFamilyOwner();
+        allow write: if isFamilyOwner();
+      }
+
+      // Shared finances — every approved member can read and write.
+      match /wallet/{docId} {
+        allow read, write: if isFamilyMember() || isFamilyOwner();
+      }
+      match /ledger/{docId} {
+        allow read, write: if isFamilyMember() || isFamilyOwner();
+      }
+
+      // Join requests — a prospective member files ONE for themselves; the head
+      // reads them to approve and deletes them to approve or decline. A member
+      // can only ever see/cancel their own request.
+      match /joinRequests/{reqId} {
+        allow read: if isFamilyOwner()
+          || (signedIn() && resource.data.email == email());
+        allow create: if signedIn()
+          && request.resource.data.email == email();
+        allow delete: if isFamilyOwner()
+          || (signedIn() && resource.data.email == email());
+        allow update: if false; // requests are immutable — cancel + refile
       }
     }
   }
