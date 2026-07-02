@@ -146,7 +146,7 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   Widget _avatar(AppState state) {
-    final url = state.profile?.photoUrl;
+    final url = state.profile?.avatarUrl;
     if (url != null && url.isNotEmpty) {
       return CircleAvatar(radius: 14, backgroundImage: NetworkImage(url));
     }

@@ -103,6 +103,7 @@ class FirestoreRepository implements FinanceStore {
       occupation: stored.occupation,
       pendingFamilyId: stored.pendingFamilyId,
       pendingFamilyName: stored.pendingFamilyName,
+      customPhotoUrl: stored.customPhotoUrl,
     );
 
     List<T> listOf<T>(

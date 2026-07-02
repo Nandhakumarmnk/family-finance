@@ -168,6 +168,7 @@ class FinanceRepository implements FinanceStore {
       occupation: profile.occupation,
       pendingFamilyId: profile.pendingFamilyId,
       pendingFamilyName: profile.pendingFamilyName,
+      customPhotoUrl: profile.customPhotoUrl,
     );
 
     final cats =

@@ -23,6 +23,11 @@ class UserProfile {
   String pendingFamilyId;
   String pendingFamilyName;
 
+  /// A custom avatar uploaded to Cloud Storage. When set it overrides the
+  /// Google account photo. Persisted (unlike [photoUrl], which comes fresh
+  /// from Google each sign-in and isn't stored).
+  String customPhotoUrl;
+
   UserProfile({
     required this.email,
     required this.displayName,
@@ -34,7 +39,12 @@ class UserProfile {
     this.occupation = '',
     this.pendingFamilyId = '',
     this.pendingFamilyName = '',
+    this.customPhotoUrl = '',
   });
+
+  /// The avatar to actually show: a custom uploaded photo wins over Google's.
+  String? get avatarUrl =>
+      customPhotoUrl.isNotEmpty ? customPhotoUrl : photoUrl;
 
   /// Row representation used when persisting to the `Profile` sheet.
   /// Order MUST match [profileHeader].
@@ -48,6 +58,7 @@ class UserProfile {
         occupation,
         pendingFamilyId,
         pendingFamilyName,
+        customPhotoUrl,
       ];
 
   // New fields are APPENDED so older 7-column rows/docs still load cleanly.
@@ -61,6 +72,7 @@ class UserProfile {
     'occupation',
     'pendingFamilyId',
     'pendingFamilyName',
+    'customPhotoUrl',
   ];
 
   factory UserProfile.fromRow(List<dynamic> r, {String? photoUrl}) {
@@ -76,6 +88,7 @@ class UserProfile {
       occupation: at(6),
       pendingFamilyId: at(7),
       pendingFamilyName: at(8),
+      customPhotoUrl: at(9),
     );
   }
 }

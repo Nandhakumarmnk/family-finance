@@ -199,10 +199,10 @@ class DashboardScreen extends StatelessWidget {
           CircleAvatar(
             radius: 24,
             backgroundColor: Colors.white.withOpacity(0.18),
-            backgroundImage: (s.profile?.photoUrl?.isNotEmpty ?? false)
-                ? NetworkImage(s.profile!.photoUrl!)
+            backgroundImage: (s.profile?.avatarUrl?.isNotEmpty ?? false)
+                ? NetworkImage(s.profile!.avatarUrl!)
                 : null,
-            child: (s.profile?.photoUrl?.isNotEmpty ?? false)
+            child: (s.profile?.avatarUrl?.isNotEmpty ?? false)
                 ? null
                 : Text(
                     initial.isEmpty ? '?' : initial[0].toUpperCase(),
