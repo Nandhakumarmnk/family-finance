@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../config.dart';
+import '../models/wallet_entry.dart';
 import '../services/statement_service.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
@@ -138,8 +139,9 @@ class _ReportsExportScreenState extends State<ReportsExportScreen> {
           _ActionTile(
             icon: Icons.grid_on,
             color: const Color(0xFF1565C0),
-            title: 'Copy as CSV',
-            subtitle: 'Copy transactions to paste into Excel / Sheets',
+            title: 'Copy all data as CSV',
+            subtitle:
+                'Income, expenses, EMIs, reminders, budgets, wallet & activity',
             onTap: () => _exportCsv(s, start, end),
           ),
           const SizedBox(height: 10),
@@ -219,39 +221,151 @@ class _ReportsExportScreenState extends State<ReportsExportScreen> {
     }
   }
 
-  /// Build a CSV of all income + expense rows for the period and copy it to the
-  /// clipboard (no extra dependency) so it can be pasted into Excel / Sheets.
+  /// Build a comprehensive CSV covering the period's transactions PLUS EMIs,
+  /// reminders, budgets, the family wallet and the activity log — each as its
+  /// own labelled section — and copy it to the clipboard (no extra dependency)
+  /// so it can be pasted into Excel / Sheets.
   Future<void> _exportCsv(AppState s, DateTime start, DateTime end) async {
-    final rows = <List<String>>[
-      ['Date', 'Type', 'Category', 'Amount', 'Payment mode', 'Notes'],
-    ];
+    final rows = <List<String>>[];
+    var dataCount = 0;
+
+    void section(String title, List<String> header) {
+      if (rows.isNotEmpty) rows.add(const ['']); // blank spacer row
+      rows.add([title]);
+      rows.add(header);
+    }
+
+    // Income + expenses (for the selected period).
+    section('INCOME (${Fmt.date(start)} – ${Fmt.date(end)})',
+        ['Date', 'Source', 'Amount', 'Notes']);
     for (final inc in s.salariesBetween(start, end)) {
       rows.add([
         Fmt.date(inc.date),
-        'Income',
         inc.source,
         inc.amount.toStringAsFixed(2),
-        '',
-        inc.notes,
+        inc.notes
       ]);
+      dataCount++;
     }
+
+    section('EXPENSES (${Fmt.date(start)} – ${Fmt.date(end)})',
+        ['Date', 'Category', 'Amount', 'Payment mode', 'Notes']);
     for (final e in s.expensesBetween(start, end)) {
       rows.add([
         Fmt.date(e.date),
-        'Expense',
         e.category,
         e.amount.toStringAsFixed(2),
         e.paymentMode,
-        e.notes,
+        e.notes
       ]);
+      dataCount++;
     }
-    if (rows.length == 1) {
-      AppFeedback.error('No transactions in this period');
+
+    // EMIs / loans.
+    if (s.emis.isNotEmpty) {
+      section('EMIs / LOANS', [
+        'Name',
+        'Monthly',
+        'Total months',
+        'Paid',
+        'Remaining EMIs',
+        'Remaining amount',
+        'Interest %',
+        'Start',
+        'Next due'
+      ]);
+      for (final e in s.emis) {
+        rows.add([
+          e.name,
+          e.monthlyAmount.toStringAsFixed(2),
+          '${e.totalMonths}',
+          '${e.paidMonths}',
+          '${e.remainingMonths}',
+          e.amountRemaining.toStringAsFixed(2),
+          e.annualInterestRate.toString(),
+          Fmt.date(e.startDate),
+          e.isClosed ? 'Closed' : Fmt.date(e.nextDueDate),
+        ]);
+        dataCount++;
+      }
+    }
+
+    // Payment reminders.
+    if (s.reminders.isNotEmpty) {
+      section('PAYMENT REMINDERS', [
+        'Title',
+        'Type',
+        'Amount',
+        'Due date',
+        'Repeats',
+        'Active',
+        'Last paid',
+        'Notes'
+      ]);
+      for (final r in s.reminders) {
+        rows.add([
+          r.title,
+          r.label,
+          r.amount > 0 ? r.amount.toStringAsFixed(2) : '',
+          Fmt.date(r.dueDate),
+          r.recurrenceLabel,
+          r.active ? 'Yes' : 'Paused',
+          r.lastPaidDate == null ? '' : Fmt.date(r.lastPaidDate!),
+          r.notes,
+        ]);
+        dataCount++;
+      }
+    }
+
+    // Budgets.
+    if (s.budgets.isNotEmpty) {
+      section('BUDGETS', ['Category', 'Monthly limit']);
+      for (final b in s.budgets) {
+        rows.add([b.category, b.monthlyLimit.toStringAsFixed(2)]);
+        dataCount++;
+      }
+    }
+
+    // Family wallet (only when in a family).
+    if (s.inFamily && s.wallet.isNotEmpty) {
+      section('FAMILY WALLET',
+          ['Date', 'Member', 'Direction', 'Amount', 'Purpose']);
+      for (final w in s.wallet) {
+        rows.add([
+          Fmt.date(w.date),
+          w.memberName.isEmpty ? w.memberEmail : w.memberName,
+          w.direction == WalletDirection.topUp ? 'Top-up' : 'Spend',
+          w.amount.toStringAsFixed(2),
+          w.purpose,
+        ]);
+        dataCount++;
+      }
+    }
+
+    // Activity log.
+    if (s.activities.isNotEmpty) {
+      section('ACTIVITY LOG',
+          ['When', 'User', 'Action', 'Type', 'Description', 'Amount']);
+      for (final a in s.activities) {
+        rows.add([
+          '${Fmt.date(a.timestamp)} ${Fmt.time(a.timestamp)}',
+          a.userEmail,
+          a.action,
+          a.type,
+          a.description,
+          a.amount == 0 ? '' : a.amount.toStringAsFixed(2),
+        ]);
+        dataCount++;
+      }
+    }
+
+    if (dataCount == 0) {
+      AppFeedback.error('No data to export yet');
       return;
     }
     final csv = rows.map((r) => r.map(_csvCell).join(',')).join('\r\n');
     await Clipboard.setData(ClipboardData(text: csv));
-    AppFeedback.success('CSV copied — paste into Sheets/Excel');
+    AppFeedback.success('All data copied — paste into Sheets/Excel');
   }
 
   String _csvCell(String v) => (v.contains(',') ||

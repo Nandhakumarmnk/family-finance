@@ -28,6 +28,20 @@ class UserProfile {
   /// from Google each sign-in and isn't stored).
   String customPhotoUrl;
 
+  // --- app settings (synced to the cloud so they follow the user) -----------
+  /// Appearance mode as a [ThemeMode] name: '', 'system', 'light' or 'dark'.
+  /// Empty means "not set yet" (the device's local choice wins until then).
+  String themeMode;
+
+  /// The colour-theme seed as an ARGB int (0 == not set yet).
+  int themeSeed;
+
+  /// Whether device notifications for payment reminders are enabled.
+  bool notificationsEnabled;
+
+  /// Hour of day (0–23) at which reminder notifications fire.
+  int reminderHour;
+
   UserProfile({
     required this.email,
     required this.displayName,
@@ -40,6 +54,10 @@ class UserProfile {
     this.pendingFamilyId = '',
     this.pendingFamilyName = '',
     this.customPhotoUrl = '',
+    this.themeMode = '',
+    this.themeSeed = 0,
+    this.notificationsEnabled = true,
+    this.reminderHour = 9,
   });
 
   /// The avatar to actually show: a custom uploaded photo wins over Google's.
@@ -59,6 +77,10 @@ class UserProfile {
         pendingFamilyId,
         pendingFamilyName,
         customPhotoUrl,
+        themeMode,
+        themeSeed,
+        notificationsEnabled ? 'yes' : 'no',
+        reminderHour,
       ];
 
   // New fields are APPENDED so older 7-column rows/docs still load cleanly.
@@ -73,6 +95,10 @@ class UserProfile {
     'pendingFamilyId',
     'pendingFamilyName',
     'customPhotoUrl',
+    'themeMode',
+    'themeSeed',
+    'notificationsEnabled',
+    'reminderHour',
   ];
 
   factory UserProfile.fromRow(List<dynamic> r, {String? photoUrl}) {
@@ -89,6 +115,11 @@ class UserProfile {
       pendingFamilyId: at(7),
       pendingFamilyName: at(8),
       customPhotoUrl: at(9),
+      themeMode: at(10),
+      themeSeed: int.tryParse(at(11)) ?? 0,
+      // Absent (older rows) → default ON; only an explicit 'no' disables.
+      notificationsEnabled: at(12).isEmpty ? true : at(12).toLowerCase() == 'yes',
+      reminderHour: at(13).isEmpty ? 9 : (int.tryParse(at(13)) ?? 9),
     );
   }
 }

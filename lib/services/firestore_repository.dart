@@ -104,6 +104,10 @@ class FirestoreRepository implements FinanceStore {
       pendingFamilyId: stored.pendingFamilyId,
       pendingFamilyName: stored.pendingFamilyName,
       customPhotoUrl: stored.customPhotoUrl,
+      themeMode: stored.themeMode,
+      themeSeed: stored.themeSeed,
+      notificationsEnabled: stored.notificationsEnabled,
+      reminderHour: stored.reminderHour,
     );
 
     List<T> listOf<T>(

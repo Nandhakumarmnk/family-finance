@@ -1,4 +1,6 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -27,6 +29,14 @@ Future<bool> _initFirebase() async {
     final options = DefaultFirebaseOptions.currentPlatform;
     if (options.apiKey.isEmpty) return false;
     await Firebase.initializeApp(options: options);
+    // Keep the web session across tab switches and reloads, so users aren't
+    // asked to sign in on every visit. Native platforms already persist the
+    // session automatically.
+    if (kIsWeb) {
+      try {
+        await FirebaseAuth.instance.setPersistence(Persistence.LOCAL);
+      } catch (_) {/* unsupported on some SDKs — safe to ignore */}
+    }
     return true;
   } catch (_) {
     return false;
@@ -47,17 +57,75 @@ class FamilyFinanceApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => ThemeController()),
         ChangeNotifierProvider(create: (_) => PinController()),
       ],
-      child: Consumer<ThemeController>(
-        builder: (_, theme, __) => MaterialApp(
-          title: 'Family Finance',
-          debugShowCheckedModeBanner: false,
-          navigatorKey: rootNavigatorKey,
-          themeMode: theme.mode,
-          theme: AppTheme.light(seed: theme.seed),
-          darkTheme: AppTheme.dark(seed: theme.seed),
-          home: const _Root(),
-        ),
-      ),
+      child: const _ThemedApp(),
+    );
+  }
+}
+
+/// Builds the [MaterialApp] and keeps appearance in sync with the signed-in
+/// user's cloud profile: choices made on one device are saved to the profile
+/// and adopted on the next device the user signs in on.
+class _ThemedApp extends StatefulWidget {
+  const _ThemedApp();
+
+  @override
+  State<_ThemedApp> createState() => _ThemedAppState();
+}
+
+class _ThemedAppState extends State<_ThemedApp> {
+  bool _wired = false;
+  bool _hydrated = false;
+  AppState? _app;
+
+  void _onAppChanged() {
+    final app = _app;
+    if (app == null || !mounted) return;
+    final tc = context.read<ThemeController>();
+    if (app.status == AppStatus.signedIn) {
+      if (_hydrated) return;
+      _hydrated = true;
+      final mode = app.themeModeName;
+      final seed = app.themeSeedValue;
+      if (mode.isNotEmpty || seed != 0) {
+        // Adopt the appearance saved in the cloud profile on this device.
+        tc.applyRemote(modeName: mode, seedValue: seed);
+      } else {
+        // Nothing saved yet — seed the cloud from this device's current choice.
+        tc.cloudPersist?.call(tc.mode, tc.seed);
+      }
+    } else if (app.status == AppStatus.signedOut) {
+      _hydrated = false; // re-hydrate on the next sign-in
+    }
+  }
+
+  @override
+  void dispose() {
+    _app?.removeListener(_onAppChanged);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.watch<ThemeController>();
+    if (!_wired) {
+      _wired = true;
+      final app = context.read<AppState>();
+      _app = app;
+      // Route local appearance changes up into the cloud profile.
+      theme.cloudPersist =
+          (m, s) => app.updateAppearance(themeMode: m.name, themeSeed: s.value);
+      app.addListener(_onAppChanged);
+      // In case sign-in already completed before this widget attached.
+      WidgetsBinding.instance.addPostFrameCallback((_) => _onAppChanged());
+    }
+    return MaterialApp(
+      title: 'Family Finance',
+      debugShowCheckedModeBanner: false,
+      navigatorKey: rootNavigatorKey,
+      themeMode: theme.mode,
+      theme: AppTheme.light(seed: theme.seed),
+      darkTheme: AppTheme.dark(seed: theme.seed),
+      home: const _Root(),
     );
   }
 }

@@ -19,7 +19,7 @@ class SalaryScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Salary / Income')),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _addDialog(context),
+        onPressed: () => _openForm(context),
         icon: const Icon(Icons.add),
         label: const Text('Add income'),
       ),
@@ -37,6 +37,7 @@ class SalaryScreen extends StatelessWidget {
                 final s0 = items[i];
                 return Card(
                   child: ListTile(
+                    onTap: () => _openForm(context, existing: s0),
                     leading: CircleAvatar(
                       backgroundColor: Colors.green.shade50,
                       child: Icon(Icons.south_west, color: Colors.green.shade700),
@@ -50,9 +51,19 @@ class SalaryScreen extends StatelessWidget {
                         Text(Fmt.currency(s0.amount, code: cur),
                             style: const TextStyle(
                                 fontWeight: FontWeight.bold, fontSize: 16)),
-                        IconButton(
-                          icon: const Icon(Icons.delete_outline),
-                          onPressed: () => context.read<AppState>().deleteSalary(s0.id),
+                        PopupMenuButton<String>(
+                          onSelected: (v) {
+                            if (v == 'edit') {
+                              _openForm(context, existing: s0);
+                            } else if (v == 'delete') {
+                              _confirmDelete(context, s0);
+                            }
+                          },
+                          itemBuilder: (_) => const [
+                            PopupMenuItem(value: 'edit', child: Text('Edit')),
+                            PopupMenuItem(
+                                value: 'delete', child: Text('Delete')),
+                          ],
                         ),
                       ],
                     ),
@@ -64,18 +75,44 @@ class SalaryScreen extends StatelessWidget {
     );
   }
 
-  void _addDialog(BuildContext context) {
+  void _openForm(BuildContext context, {Salary? existing}) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (_) => const _SalaryForm(),
+      builder: (_) => _SalaryForm(existing: existing),
     );
+  }
+
+  Future<void> _confirmDelete(BuildContext context, Salary s0) async {
+    final cur = context.read<AppState>().currency;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete income?'),
+        content: Text(
+            '${s0.source} · ${Fmt.currency(s0.amount, code: cur)} on ${Fmt.date(s0.date)} will be removed.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              style: FilledButton.styleFrom(
+                  backgroundColor: Theme.of(ctx).colorScheme.error),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Delete')),
+        ],
+      ),
+    );
+    if (ok == true && context.mounted) {
+      context.read<AppState>().deleteSalary(s0.id);
+    }
   }
 }
 
 class _SalaryForm extends StatefulWidget {
-  const _SalaryForm();
+  final Salary? existing;
+  const _SalaryForm({this.existing});
 
   @override
   State<_SalaryForm> createState() => _SalaryFormState();
@@ -83,11 +120,27 @@ class _SalaryForm extends StatefulWidget {
 
 class _SalaryFormState extends State<_SalaryForm> {
   final _form = GlobalKey<FormState>();
-  final _source = TextEditingController(text: 'Primary salary');
-  final _amount = TextEditingController();
-  final _notes = TextEditingController();
-  DateTime _date = DateTime.now();
+  late final TextEditingController _source;
+  late final TextEditingController _amount;
+  late final TextEditingController _notes;
+  late DateTime _date;
   bool _saving = false;
+
+  bool get _isEdit => widget.existing != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final e = widget.existing;
+    _source = TextEditingController(text: e?.source ?? 'Primary salary');
+    _amount = TextEditingController(
+        text: e != null ? _trimAmount(e.amount) : '');
+    _notes = TextEditingController(text: e?.notes ?? '');
+    _date = e?.date ?? DateTime.now();
+  }
+
+  static String _trimAmount(double v) =>
+      v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toString();
 
   @override
   void dispose() {
@@ -101,13 +154,19 @@ class _SalaryFormState extends State<_SalaryForm> {
     if (_saving) return; // guard against double/triple taps while saving
     if (!_form.currentState!.validate()) return;
     setState(() => _saving = true);
-    await context.read<AppState>().addSalary(Salary(
-          id: newId('sal'),
-          date: _date,
-          source: _source.text.trim(),
-          amount: double.parse(_amount.text.trim()),
-          notes: _notes.text.trim(),
-        ));
+    final app = context.read<AppState>();
+    final salary = Salary(
+      id: widget.existing?.id ?? newId('sal'),
+      date: _date,
+      source: _source.text.trim(),
+      amount: double.parse(_amount.text.trim()),
+      notes: _notes.text.trim(),
+    );
+    if (_isEdit) {
+      await app.updateSalary(salary);
+    } else {
+      await app.addSalary(salary);
+    }
     if (mounted) Navigator.pop(context);
   }
 
@@ -126,7 +185,8 @@ class _SalaryFormState extends State<_SalaryForm> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Add income', style: Theme.of(context).textTheme.titleLarge),
+            Text(_isEdit ? 'Edit income' : 'Add income',
+                style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 16),
             TextFormField(
               controller: _source,
@@ -155,7 +215,7 @@ class _SalaryFormState extends State<_SalaryForm> {
                       height: 20,
                       width: 20,
                       child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Text('Save'),
+                  : Text(_isEdit ? 'Save changes' : 'Save'),
             ),
           ],
         ),

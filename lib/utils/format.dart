@@ -13,6 +13,34 @@ class Fmt {
     'AUD': 'A\$',
     'CAD': 'C\$',
     'SGD': 'S\$',
+    'JPY': '¥',
+    'CNY': '¥',
+    'CHF': 'CHF ',
+    'HKD': 'HK\$',
+    'NZD': 'NZ\$',
+    'ZAR': 'R',
+    'BRL': 'R\$',
+    'RUB': '₽',
+    'KRW': '₩',
+    'THB': '฿',
+    'MYR': 'RM',
+    'IDR': 'Rp',
+    'PHP': '₱',
+    'VND': '₫',
+    'TRY': '₺',
+    'SAR': '﷼',
+    'QAR': 'ر.ق',
+    'KWD': 'د.ك',
+    'BHD': '.د.ب',
+    'OMR': 'ر.ع.',
+    'PKR': '₨',
+    'LKR': 'Rs',
+    'BDT': '৳',
+    'NPR': 'रू',
+    'EGP': 'E£',
+    'NGN': '₦',
+    'KES': 'KSh',
+    'MXN': 'Mex\$',
   };
 
   static String currency(num value, {String code = 'INR'}) {
@@ -46,7 +74,11 @@ class Fmt {
       DateFormat.MMM().format(DateTime(2000, month));
 
   static const List<String> currencyCodes = [
-    'INR', 'USD', 'EUR', 'GBP', 'AED', 'AUD', 'CAD', 'SGD',
+    'INR', 'USD', 'EUR', 'GBP', 'AED', 'AUD', 'CAD', 'SGD', //
+    'JPY', 'CNY', 'CHF', 'HKD', 'NZD', 'ZAR', 'BRL', 'RUB', //
+    'KRW', 'THB', 'MYR', 'IDR', 'PHP', 'VND', 'TRY', 'SAR', //
+    'QAR', 'KWD', 'BHD', 'OMR', 'PKR', 'LKR', 'BDT', 'NPR', //
+    'EGP', 'NGN', 'KES', 'MXN',
   ];
 }
 

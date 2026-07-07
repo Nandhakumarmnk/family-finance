@@ -11,14 +11,47 @@ import '../widgets/common.dart';
 /// mandatory needs. Shows what's overdue / due soon / upcoming, lets the user
 /// mark a payment done (optionally booking the expense) and rolls recurring
 /// reminders forward to their next due date.
-class RemindersScreen extends StatelessWidget {
+class RemindersScreen extends StatefulWidget {
   const RemindersScreen({super.key});
+
+  @override
+  State<RemindersScreen> createState() => _RemindersScreenState();
+
+  static void _openForm(BuildContext context,
+      {Reminder? existing, ReminderKind? kind}) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => _ReminderForm(existing: existing, initialKind: kind),
+    );
+  }
+}
+
+class _RemindersScreenState extends State<RemindersScreen> {
+  final _search = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final s = context.watch<AppState>();
     final cur = s.currency;
-    final all = s.remindersSorted;
+    final hasAny = s.reminders.isNotEmpty;
+
+    final q = _query.trim().toLowerCase();
+    final all = s.remindersSorted.where((r) {
+      if (q.isEmpty) return true;
+      return r.title.toLowerCase().contains(q) ||
+          r.notes.toLowerCase().contains(q) ||
+          r.label.toLowerCase().contains(q) ||
+          r.amount.toStringAsFixed(2).contains(q);
+    }).toList();
 
     final overdue =
         all.where((r) => r.status == ReminderStatus.overdue).toList();
@@ -32,25 +65,61 @@ class RemindersScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Payment reminders')),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _openForm(context),
+        onPressed: () => RemindersScreen._openForm(context),
         icon: const Icon(Icons.add_alert_outlined),
         label: const Text('Add reminder'),
       ),
       body: ResponsiveCenter(
         maxWidth: 720,
-        child: all.isEmpty
-          ? _EmptyReminders(onPick: (k) => _openForm(context, kind: k))
-          : ListView(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
-              children: [
-                _summary(context, s, cur),
-                _group(context, 'Overdue', overdue, cur, Colors.red),
-                _group(context, 'Due today', today, cur, Colors.deepOrange),
-                _group(context, 'Due soon', soon, cur, Colors.amber.shade800),
-                _group(context, 'Upcoming', upcoming, cur, Colors.teal),
-                _group(context, 'Paused', paused, cur, Colors.grey),
-              ],
-            ),
+        child: !hasAny
+            ? _EmptyReminders(
+                onPick: (k) => RemindersScreen._openForm(context, kind: k))
+            : Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                    child: TextField(
+                      controller: _search,
+                      onChanged: (v) => setState(() => _query = v),
+                      decoration: InputDecoration(
+                        hintText: 'Search reminders',
+                        prefixIcon: const Icon(Icons.search),
+                        suffixIcon: _query.isEmpty
+                            ? null
+                            : IconButton(
+                                icon: const Icon(Icons.clear),
+                                onPressed: () {
+                                  _search.clear();
+                                  setState(() => _query = '');
+                                },
+                              ),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: all.isEmpty
+                        ? const EmptyState(
+                            icon: Icons.search_off,
+                            message: 'No reminders match your search.')
+                        : ListView(
+                            padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
+                            children: [
+                              _summary(context, s, cur),
+                              _group(context, 'Overdue', overdue, cur,
+                                  Colors.red),
+                              _group(context, 'Due today', today, cur,
+                                  Colors.deepOrange),
+                              _group(context, 'Due soon', soon, cur,
+                                  Colors.amber.shade800),
+                              _group(context, 'Upcoming', upcoming, cur,
+                                  Colors.teal),
+                              _group(context, 'Paused', paused, cur,
+                                  Colors.grey),
+                            ],
+                          ),
+                  ),
+                ],
+              ),
       ),
     );
   }
@@ -112,14 +181,6 @@ class RemindersScreen extends StatelessWidget {
     );
   }
 
-  static void _openForm(BuildContext context, {Reminder? existing, ReminderKind? kind}) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (_) => _ReminderForm(existing: existing, initialKind: kind),
-    );
-  }
 }
 
 class _EmptyReminders extends StatelessWidget {

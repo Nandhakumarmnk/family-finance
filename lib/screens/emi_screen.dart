@@ -95,11 +95,13 @@ class EmiScreen extends StatelessWidget {
                 PopupMenuButton<String>(
                   onSelected: (v) {
                     if (v == 'pay') context.read<AppState>().recordEmiPayment(e.id);
-                    if (v == 'del') context.read<AppState>().deleteEmi(e.id);
+                    if (v == 'edit') _openForm(context, existing: e);
+                    if (v == 'del') _confirmDelete(context, e);
                   },
                   itemBuilder: (_) => [
                     if (!e.isClosed)
                       const PopupMenuItem(value: 'pay', child: Text('Record payment')),
+                    const PopupMenuItem(value: 'edit', child: Text('Edit')),
                     const PopupMenuItem(value: 'del', child: Text('Delete')),
                   ],
                 ),
@@ -152,13 +154,38 @@ class EmiScreen extends StatelessWidget {
     });
   }
 
-  void _addDialog(BuildContext context) {
+  void _addDialog(BuildContext context) => _openForm(context);
+
+  void _openForm(BuildContext context, {Emi? existing}) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (_) => const _EmiForm(),
+      builder: (_) => _EmiForm(existing: existing),
     );
+  }
+
+  Future<void> _confirmDelete(BuildContext context, Emi e) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete EMI?'),
+        content: Text('“${e.name}” will be removed from your loans.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              style: FilledButton.styleFrom(
+                  backgroundColor: Theme.of(ctx).colorScheme.error),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Delete')),
+        ],
+      ),
+    );
+    if (ok == true && context.mounted) {
+      context.read<AppState>().deleteEmi(e.id);
+    }
   }
 }
 
@@ -167,7 +194,8 @@ class EmiScreen extends StatelessWidget {
 enum _EmiExtra { interest, remaining }
 
 class _EmiForm extends StatefulWidget {
-  const _EmiForm();
+  final Emi? existing;
+  const _EmiForm({this.existing});
 
   @override
   State<_EmiForm> createState() => _EmiFormState();
@@ -175,15 +203,41 @@ class _EmiForm extends StatefulWidget {
 
 class _EmiFormState extends State<_EmiForm> {
   final _form = GlobalKey<FormState>();
-  final _name = TextEditingController();
-  final _monthly = TextEditingController();
-  final _total = TextEditingController();
-  final _paid = TextEditingController(text: '0');
-  final _rate = TextEditingController(text: '0');
-  final _outstanding = TextEditingController();
-  _EmiExtra _extra = _EmiExtra.interest;
-  DateTime _start = DateTime.now();
+  late final TextEditingController _name;
+  late final TextEditingController _monthly;
+  late final TextEditingController _total;
+  late final TextEditingController _paid;
+  late final TextEditingController _rate;
+  late final TextEditingController _outstanding;
+  late _EmiExtra _extra;
+  late DateTime _start;
   bool _saving = false;
+
+  bool get _isEdit => widget.existing != null;
+
+  static String _num(double v) =>
+      v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toString();
+
+  @override
+  void initState() {
+    super.initState();
+    final e = widget.existing;
+    _name = TextEditingController(text: e?.name ?? '');
+    _monthly =
+        TextEditingController(text: e != null ? _num(e.monthlyAmount) : '');
+    _total = TextEditingController(text: e != null ? '${e.totalMonths}' : '');
+    _paid = TextEditingController(text: e != null ? '${e.paidMonths}' : '0');
+    _rate = TextEditingController(
+        text: e != null ? _num(e.annualInterestRate) : '0');
+    _outstanding = TextEditingController(
+        text: (e != null && e.outstandingAmount > 0)
+            ? _num(e.outstandingAmount)
+            : '');
+    _extra = (e != null && e.outstandingAmount > 0)
+        ? _EmiExtra.remaining
+        : _EmiExtra.interest;
+    _start = e?.startDate ?? DateTime.now();
+  }
 
   @override
   void dispose() {
@@ -201,18 +255,24 @@ class _EmiFormState extends State<_EmiForm> {
     if (!_form.currentState!.validate()) return;
     setState(() => _saving = true);
     final byInterest = _extra == _EmiExtra.interest;
-    await context.read<AppState>().addEmi(Emi(
-          id: newId('emi'),
-          name: _name.text.trim(),
-          monthlyAmount: double.parse(_monthly.text.trim()),
-          totalMonths: int.parse(_total.text.trim()),
-          paidMonths: int.tryParse(_paid.text.trim()) ?? 0,
-          annualInterestRate:
-              byInterest ? (double.tryParse(_rate.text.trim()) ?? 0) : 0,
-          outstandingAmount:
-              byInterest ? 0 : (double.tryParse(_outstanding.text.trim()) ?? 0),
-          startDate: _start,
-        ));
+    final app = context.read<AppState>();
+    final emi = Emi(
+      id: widget.existing?.id ?? newId('emi'),
+      name: _name.text.trim(),
+      monthlyAmount: double.parse(_monthly.text.trim()),
+      totalMonths: int.parse(_total.text.trim()),
+      paidMonths: int.tryParse(_paid.text.trim()) ?? 0,
+      annualInterestRate:
+          byInterest ? (double.tryParse(_rate.text.trim()) ?? 0) : 0,
+      outstandingAmount:
+          byInterest ? 0 : (double.tryParse(_outstanding.text.trim()) ?? 0),
+      startDate: _start,
+    );
+    if (_isEdit) {
+      await app.updateEmi(emi);
+    } else {
+      await app.addEmi(emi);
+    }
     if (mounted) Navigator.pop(context);
   }
 
@@ -232,7 +292,8 @@ class _EmiFormState extends State<_EmiForm> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('Add EMI / loan', style: Theme.of(context).textTheme.titleLarge),
+              Text(_isEdit ? 'Edit EMI / loan' : 'Add EMI / loan',
+                  style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 16),
               TextFormField(
                 controller: _name,
@@ -318,7 +379,7 @@ class _EmiFormState extends State<_EmiForm> {
                         height: 20,
                         width: 20,
                         child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Text('Save'),
+                    : Text(_isEdit ? 'Save changes' : 'Save'),
               ),
             ],
           ),

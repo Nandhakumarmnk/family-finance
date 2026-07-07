@@ -45,11 +45,23 @@ class NotificationService {
   }
 
   /// Cancel everything and (re)schedule a tray notification for each active
-  /// reminder, at 9am on its due date. Call whenever reminders change.
-  static Future<void> sync(List<Reminder> reminders, {String currency = 'INR'}) async {
+  /// reminder, at [hour] on its due date. Call whenever reminders (or the
+  /// notification preferences) change. When [enabled] is false everything is
+  /// cancelled and nothing is scheduled, so the user's master toggle is honoured.
+  static Future<void> sync(
+    List<Reminder> reminders, {
+    String currency = 'INR',
+    bool enabled = true,
+    int hour = 9,
+  }) async {
     if (kIsWeb) return;
+    if (!enabled) {
+      await cancelAll();
+      return;
+    }
     if (!_ready) await init();
     if (!_ready) return;
+    final atHour = hour.clamp(0, 23);
     try {
       await _plugin.cancelAll();
 
@@ -67,8 +79,9 @@ class NotificationService {
       final now = DateTime.now();
       for (final r in reminders) {
         if (!r.active) continue;
-        // Fire at 9am on the due date; skip ones already in the past.
-        final at = DateTime(r.dueDate.year, r.dueDate.month, r.dueDate.day, 9);
+        // Fire at the chosen hour on the due date; skip ones already past.
+        final at =
+            DateTime(r.dueDate.year, r.dueDate.month, r.dueDate.day, atHour);
         if (!at.isAfter(now)) continue;
         final body = r.amount > 0
             ? '${Fmt.currency(r.amount, code: currency)} due today'

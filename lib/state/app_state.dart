@@ -22,6 +22,7 @@ import '../services/auth_service.dart';
 import '../services/backend_service.dart';
 import '../services/drive_service.dart';
 import '../services/firestore_repository.dart';
+import '../services/local_cache.dart';
 import '../services/notification_service.dart';
 import '../services/storage_service.dart';
 import '../utils/format.dart';
@@ -60,6 +61,16 @@ class AppState extends ChangeNotifier {
   /// per-account so the onboarding screen doesn't nag on every launch.
   bool _familySetupDismissed = false;
 
+  /// True while a fresh copy is being fetched in the background after the app
+  /// opened instantly from the local cache. Lets the UI show a subtle "syncing"
+  /// hint without blocking interaction.
+  bool _refreshing = false;
+  bool get refreshing => _refreshing;
+
+  /// Bumped on every mutation. Used so a background refresh started from the
+  /// cache never clobbers a change the user made while it was still loading.
+  int _mutationCounter = 0;
+
   // Selected period for the reports/dashboard view.
   late int selectedYear;
   late int selectedMonth;
@@ -78,6 +89,45 @@ class AppState extends ChangeNotifier {
   FamilyData? get family => _family;
   bool get inFamily => (_personal?.profile.familyId ?? '').isNotEmpty;
   String get currency => _personal?.profile.currencyCode ?? 'INR';
+
+  // --- app settings (persisted on the profile → synced to the cloud) --------
+  /// Whether reminder notifications are enabled (defaults to on).
+  bool get notificationsEnabled =>
+      _personal?.profile.notificationsEnabled ?? true;
+
+  /// Hour of day (0–23) reminder notifications fire at (defaults to 9am).
+  int get reminderHour => _personal?.profile.reminderHour ?? 9;
+
+  /// Stored appearance mode name ('' when the user hasn't chosen one yet).
+  String get themeModeName => _personal?.profile.themeMode ?? '';
+
+  /// Stored colour-theme seed as an ARGB int (0 when unset).
+  int get themeSeedValue => _personal?.profile.themeSeed ?? 0;
+
+  /// Persist the chosen appearance (theme mode + colour) to the profile so it
+  /// follows the user across devices. Called by the theme bridge in main.dart.
+  Future<void> updateAppearance({String? themeMode, int? themeSeed}) async {
+    if (_personal == null) return;
+    if (themeMode != null) _personal!.profile.themeMode = themeMode;
+    if (themeSeed != null) _personal!.profile.themeSeed = themeSeed;
+    await _persistPersonal();
+  }
+
+  /// Turn reminder notifications on/off; re-syncs the device schedule.
+  Future<void> setNotificationsEnabled(bool value) async {
+    if (_personal == null) return;
+    _personal!.profile.notificationsEnabled = value;
+    await _persistPersonal();
+    _celebrate(value ? 'Notifications on' : 'Notifications off');
+  }
+
+  /// Set the hour (0–23) reminder notifications fire; re-syncs the schedule.
+  Future<void> setReminderHour(int hour) async {
+    if (_personal == null) return;
+    _personal!.profile.reminderHour = hour.clamp(0, 23);
+    await _persistPersonal();
+    _celebrate('Reminder time updated');
+  }
 
   /// Whether cloud file attachments (receipts, PDFs, avatars) are available —
   /// only on the Firestore backend once signed in.
@@ -199,6 +249,7 @@ class AppState extends ChangeNotifier {
     _family = null;
     _repo = null;
     _storage = null;
+    _refreshing = false;
     status = AppStatus.signedOut;
     notifyListeners();
   }
@@ -213,6 +264,9 @@ class AppState extends ChangeNotifier {
     final repo = _repo;
     final personalId = _personal?.fileId;
     final familyId = _family?.fileId;
+    final email = _personal?.profile.email ?? '';
+    final famCode = _personal?.profile.familyId ?? '';
+    if (email.isNotEmpty) await LocalCache.clear(email, familyId: famCode);
     _setBusy(true);
     try {
       if (repo != null && personalId != null && personalId.isNotEmpty) {
@@ -244,28 +298,60 @@ class AppState extends ChangeNotifier {
       _repo = FinanceRepository(DriveService(client));
     }
 
+    final prefs = await SharedPreferences.getInstance();
+    _familySetupDismissed =
+        prefs.getBool('family_setup_dismissed_${account.email}') ?? false;
+
+    // FAST PATH: paint the last-known data from the on-device cache right away
+    // so the app opens instantly instead of blocking on the network. The
+    // authoritative copy is fetched just below and swapped in when it lands.
+    final cached =
+        await LocalCache.loadPersonal(account.email, photoUrl: account.photoUrl);
+    if (cached != null) {
+      _personal = cached;
+      final famId = cached.profile.familyId;
+      if (famId.isNotEmpty) _family = await LocalCache.loadFamily(famId);
+      _refreshing = true;
+      status = AppStatus.signedIn;
+      notifyListeners();
+    }
+
+    // Fetch the authoritative copy. If the user edited the cached data while
+    // this was loading, keep their edits (they're already saved) rather than
+    // letting the slower fetch overwrite them.
+    final startMutations = _mutationCounter;
     final seed = UserProfile(
       email: account.email,
       displayName: account.displayName,
       photoUrl: account.photoUrl,
     );
-    _personal = await _repo!.loadPersonal(seed);
-
-    final prefs = await SharedPreferences.getInstance();
-    _familySetupDismissed =
-        prefs.getBool('family_setup_dismissed_${account.email}') ?? false;
-
-    if (inFamily) {
-      await _loadFamily();
-    } else if (hasPendingJoin) {
-      // Approved while we were away? Finalize the join now; otherwise stay
-      // pending. Best-effort — never blocks sign-in.
-      try {
-        await refreshPendingJoin();
-      } catch (_) {/* transient */}
+    try {
+      final fresh = await _repo!.loadPersonal(seed);
+      if (_mutationCounter == startMutations) {
+        _personal = fresh;
+        if (inFamily) {
+          await _loadFamily();
+        } else if (hasPendingJoin) {
+          // Approved while we were away? Finalize the join now; otherwise stay
+          // pending. Best-effort — never blocks sign-in.
+          try {
+            await refreshPendingJoin();
+          } catch (_) {/* transient */}
+        }
+      }
+    } catch (e) {
+      // Offline / backend unreachable: keep showing the cache if we have one,
+      // otherwise this is a genuine failure.
+      if (_personal == null) rethrow;
+    } finally {
+      _refreshing = false;
     }
+
     status = AppStatus.signedIn;
     notifyListeners();
+
+    // Refresh the on-device cache with whatever we now hold.
+    await _cacheAll();
 
     // The head surfaces any pending join requests (no-op for everyone else).
     await loadJoinRequests();
@@ -556,6 +642,30 @@ class AppState extends ChangeNotifier {
     _celebrate('Income added');
   }
 
+  /// Correct a wrongly-entered income entry (kept under the same id, so its
+  /// shared-ledger mirror is replaced in place).
+  Future<void> updateSalary(Salary s) async {
+    final list = _personal!.salaries;
+    final idx = list.indexWhere((e) => e.id == s.id);
+    if (idx < 0) return;
+    list[idx] = s;
+    _logActivity('Updated', 'Income', s.source, s.amount);
+    var familyChanged = false;
+    if (_family != null && inFamily) {
+      _family!.ledger.removeWhere((l) => l.id == s.id);
+      familyChanged = _mirrorToFamily(
+          id: s.id,
+          date: s.date,
+          type: 'income',
+          category: s.source,
+          amount: s.amount,
+          notes: s.notes);
+    }
+    if (familyChanged) await _persistFamilyEntries();
+    await _persistPersonal();
+    _celebrate('Income updated');
+  }
+
   Future<void> deleteSalary(String id) async {
     final list = _personal!.salaries;
     final idx = list.indexWhere((e) => e.id == id);
@@ -566,6 +676,7 @@ class AppState extends ChangeNotifier {
     }
     if (_unmirrorFromFamily(id)) await _persistFamilyEntries();
     await _persistPersonal();
+    _celebrate('Income deleted');
   }
 
   // --- expenses --------------------------------------------------------------
@@ -605,6 +716,58 @@ class AppState extends ChangeNotifier {
     _celebrate('Expense added');
   }
 
+  /// Correct a wrongly-entered expense (same id). Keeps its shared-ledger mirror
+  /// and any linked family-wallet spend in sync with the new values.
+  Future<void> updateExpense(Expense e) async {
+    final list = _personal!.expenses;
+    final idx = list.indexWhere((x) => x.id == e.id);
+    if (idx < 0) return;
+    list[idx] = e;
+    _logActivity('Updated', 'Expense',
+        '${e.category}${e.notes.isEmpty ? '' : ' — ${e.notes}'}', e.amount);
+
+    var familyChanged = false;
+    if (_family != null && inFamily) {
+      _family!.ledger.removeWhere((l) => l.id == e.id);
+      familyChanged = _mirrorToFamily(
+          id: e.id,
+          date: e.date,
+          type: 'expense',
+          category: e.category,
+          amount: e.amount,
+          notes: e.notes);
+    }
+    // Keep the linked family-wallet spend consistent with the edited expense.
+    if (_family != null) {
+      final wId = 'w_${e.id}';
+      final wIdx = _family!.wallet.indexWhere((w) => w.id == wId);
+      if (e.fromFamilyWallet) {
+        final entry = WalletEntry(
+          id: wId,
+          date: e.date,
+          memberEmail: _personal!.profile.email,
+          memberName: _personal!.profile.displayName,
+          direction: WalletDirection.spend,
+          amount: e.amount,
+          purpose: '${e.category}: ${e.notes}',
+        );
+        if (wIdx >= 0) {
+          _family!.wallet[wIdx] = entry;
+        } else {
+          _family!.wallet.add(entry);
+        }
+        familyChanged = true;
+      } else if (wIdx >= 0) {
+        _family!.wallet.removeAt(wIdx);
+        _family!.tombstones.add(wId);
+        familyChanged = true;
+      }
+    }
+    if (familyChanged) await _persistFamilyEntries();
+    await _persistPersonal();
+    _celebrate('Expense updated');
+  }
+
   Future<void> deleteExpense(String id) async {
     final list = _personal!.expenses;
     final idx = list.indexWhere((e) => e.id == id);
@@ -614,9 +777,24 @@ class AppState extends ChangeNotifier {
       _logActivity('Deleted', 'Expense', e.category, e.amount);
       // Clean up the receipt photo too (fire-and-forget).
       if (e.hasReceipt && canAttachFiles) _storage!.deleteReceipt(e.id);
+      // Remove any linked family-wallet spend as well.
+      if (e.fromFamilyWallet && _family != null) {
+        final wId = 'w_$id';
+        final before = _family!.wallet.length;
+        _family!.wallet.removeWhere((w) => w.id == wId);
+        if (_family!.wallet.length != before) {
+          _family!.tombstones.add(wId);
+        }
+      }
     }
-    if (_unmirrorFromFamily(id)) await _persistFamilyEntries();
+    var familyChanged = _unmirrorFromFamily(id);
+    // If we removed a wallet spend above, persist the family too.
+    if (_family != null && _family!.tombstones.contains('w_$id')) {
+      familyChanged = true;
+    }
+    if (familyChanged) await _persistFamilyEntries();
     await _persistPersonal();
+    _celebrate('Expense deleted');
   }
 
   // --- EMIs ------------------------------------------------------------------
@@ -625,6 +803,17 @@ class AppState extends ChangeNotifier {
     _logActivity('Added', 'EMI', emi.name, emi.monthlyAmount);
     await _persistPersonal();
     _celebrate('EMI added');
+  }
+
+  /// Correct a wrongly-entered EMI (matched by id).
+  Future<void> updateEmi(Emi emi) async {
+    final list = _personal!.emis;
+    final idx = list.indexWhere((e) => e.id == emi.id);
+    if (idx < 0) return;
+    list[idx] = emi;
+    _logActivity('Updated', 'EMI', emi.name, emi.monthlyAmount);
+    await _persistPersonal();
+    _celebrate('EMI updated');
   }
 
   Future<void> recordEmiPayment(String id) async {
@@ -674,6 +863,17 @@ class AppState extends ChangeNotifier {
       if (t.year == year && t.month == month) return t;
     }
     return null;
+  }
+
+  /// Remove a savings goal for a given month (e.g. set by mistake).
+  Future<void> deleteTarget(int year, int month) async {
+    if (_personal == null) return;
+    final before = _personal!.targets.length;
+    _personal!.targets.removeWhere((e) => e.year == year && e.month == month);
+    if (_personal!.targets.length == before) return;
+    _logActivity('Deleted', 'Target', 'Goal for $month/$year');
+    await _persistPersonal();
+    _celebrate('Goal removed');
   }
 
   // --- family / multi-user ---------------------------------------------------
@@ -1212,9 +1412,21 @@ class AppState extends ChangeNotifier {
   }
 
   // --- internals -------------------------------------------------------------
+  /// Refresh the on-device cache with everything currently in memory.
+  Future<void> _cacheAll() async {
+    final p = _personal;
+    if (p != null) await LocalCache.savePersonal(p);
+    final f = _family;
+    if (f != null) await LocalCache.saveFamily(f);
+  }
+
   Future<void> _persistPersonal() async {
+    _mutationCounter++;
     error = null;
     notifyListeners(); // optimistic UI update
+    // Write the cache first so the change is instantly available on reopen and
+    // survives even if the remote save below fails (e.g. offline).
+    if (_personal != null) await LocalCache.savePersonal(_personal!);
     _setBusy(true);
     try {
       await _repo!.savePersonal(_personal!);
@@ -1226,16 +1438,23 @@ class AppState extends ChangeNotifier {
     _syncNotifications();
   }
 
-  /// Re-schedule device notifications to match the current reminders.
-  /// Fire-and-forget; safe to call often.
+  /// Re-schedule device notifications to match the current reminders and the
+  /// user's notification preferences. Fire-and-forget; safe to call often.
   void _syncNotifications() {
-    NotificationService.sync(reminders, currency: currency);
+    NotificationService.sync(
+      reminders,
+      currency: currency,
+      enabled: notificationsEnabled,
+      hour: reminderHour,
+    );
   }
 
   /// Persist shared FINANCES (wallet + ledger). Any member may do this.
   Future<void> _persistFamilyEntries() async {
+    _mutationCounter++;
     error = null;
     notifyListeners();
+    if (_family != null) await LocalCache.saveFamily(_family!);
     _setBusy(true);
     try {
       await _repo!.saveFamily(_family!);
@@ -1250,8 +1469,10 @@ class AppState extends ChangeNotifier {
   /// callers already gate on [isFamilyHead], so a failure here means the rules
   /// rejected a non-head — surfaced as a soft error.
   Future<void> _persistFamilyRoster({bool overwriteName = false}) async {
+    _mutationCounter++;
     error = null;
     notifyListeners();
+    if (_family != null) await LocalCache.saveFamily(_family!);
     _setBusy(true);
     try {
       await _repo!.saveFamilyRoster(_family!, overwriteName: overwriteName);

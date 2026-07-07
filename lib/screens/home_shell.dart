@@ -1,26 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../services/backend_service.dart';
 import '../state/app_state.dart';
-import 'activity_screen.dart';
 import 'add_details_screen.dart';
-import 'appearance_screen.dart';
-import 'budgets_screen.dart';
 import 'dashboard_screen.dart';
-import 'reports_export_screen.dart';
 import 'emi_screen.dart';
 import 'expenses_screen.dart';
 import 'family_screen.dart';
-import 'master_screen.dart';
-import 'member_analytics_screen.dart';
 import 'reminders_screen.dart';
 import 'reports_screen.dart';
-import 'salary_screen.dart';
+import 'settings_screen.dart';
 
 /// Main authenticated shell: bottom navigation between the primary screens,
-/// with secondary screens (Profile/Details, Salary, Master users, Sign out)
-/// reachable from the app-bar menu.
+/// with a compact avatar menu (My details · Settings · Sign out) — everything
+/// else now lives in the Settings hub.
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
 
@@ -61,10 +54,16 @@ class _HomeShellState extends State<HomeShell> {
               ),
             ),
           _reminderBell(context, state),
+          IconButton(
+            tooltip: 'Settings',
+            icon: const Icon(Icons.settings_outlined),
+            onPressed: () => _push(context, const SettingsScreen()),
+          ),
           PopupMenuButton<String>(
             // Badge the menu when the head has join requests waiting.
             icon: state.pendingRequestCount > 0
-                ? Badge.count(count: state.pendingRequestCount, child: _avatar(state))
+                ? Badge.count(
+                    count: state.pendingRequestCount, child: _avatar(state))
                 : _avatar(state),
             onSelected: (v) => _onMenu(context, v),
             itemBuilder: (_) => [
@@ -93,26 +92,14 @@ class _HomeShellState extends State<HomeShell> {
                 ),
               ),
               const PopupMenuDivider(),
-              const PopupMenuItem(value: 'details', child: _MenuRow(Icons.person, 'My Details')),
-              const PopupMenuItem(value: 'salary', child: _MenuRow(Icons.payments, 'Salary / Income')),
-              const PopupMenuItem(value: 'reminders', child: _MenuRow(Icons.notifications_active_outlined, 'Payment reminders')),
-              const PopupMenuItem(value: 'activity', child: _MenuRow(Icons.history, 'Activity & changes')),
-              const PopupMenuItem(value: 'export', child: _MenuRow(Icons.picture_as_pdf_outlined, 'Reports & export')),
-              const PopupMenuItem(value: 'budgets', child: _MenuRow(Icons.savings_outlined, 'Budgets')),
-              if (state.inFamily)
-                const PopupMenuItem(value: 'analytics', child: _MenuRow(Icons.insights_outlined, 'Family analytics')),
-              const PopupMenuItem(value: 'appearance', child: _MenuRow(Icons.palette_outlined, 'Appearance')),
-              if (BackendService.isConfigured)
-                const PopupMenuItem(value: 'report', child: _MenuRow(Icons.mark_email_read_outlined, 'Email me a report')),
-              PopupMenuItem(
-                  value: 'master',
-                  child: _MenuRow(
-                      Icons.groups,
-                      state.pendingRequestCount > 0
-                          ? 'Users / Master (${state.pendingRequestCount})'
-                          : 'Users / Master')),
+              const PopupMenuItem(
+                  value: 'details', child: _MenuRow(Icons.person, 'My details')),
+              const PopupMenuItem(
+                  value: 'settings',
+                  child: _MenuRow(Icons.settings, 'Settings')),
               const PopupMenuDivider(),
-              const PopupMenuItem(value: 'signout', child: _MenuRow(Icons.logout, 'Sign out')),
+              const PopupMenuItem(
+                  value: 'signout', child: _MenuRow(Icons.logout, 'Sign out')),
             ],
           ),
         ],
@@ -163,32 +150,8 @@ class _HomeShellState extends State<HomeShell> {
       case 'details':
         _push(context, const AddDetailsScreen());
         break;
-      case 'salary':
-        _push(context, const SalaryScreen());
-        break;
-      case 'reminders':
-        _push(context, const RemindersScreen());
-        break;
-      case 'activity':
-        _push(context, const ActivityScreen());
-        break;
-      case 'appearance':
-        _push(context, const AppearanceScreen());
-        break;
-      case 'export':
-        _push(context, const ReportsExportScreen());
-        break;
-      case 'budgets':
-        _push(context, const BudgetsScreen());
-        break;
-      case 'analytics':
-        _push(context, const MemberAnalyticsScreen());
-        break;
-      case 'report':
-        _emailReport(context);
-        break;
-      case 'master':
-        _push(context, const MasterScreen());
+      case 'settings':
+        _push(context, const SettingsScreen());
         break;
       case 'signout':
         context.read<AppState>().signOut();
@@ -198,23 +161,6 @@ class _HomeShellState extends State<HomeShell> {
 
   void _push(BuildContext context, Widget page) {
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
-  }
-
-  Future<void> _emailReport(BuildContext context) async {
-    final messenger = ScaffoldMessenger.of(context);
-    final state = context.read<AppState>();
-    messenger.showSnackBar(
-      const SnackBar(content: Text('Sending your report…')),
-    );
-    final ok = await state.sendReportEmailNow();
-    messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(ok
-            ? 'Report emailed — check your inbox ✓'
-            : 'Could not send the report (is the backend set up?)'),
-      ),
-    );
   }
 }
 

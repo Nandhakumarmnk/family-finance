@@ -6,6 +6,7 @@ import '../models/target.dart';
 import '../state/app_state.dart';
 import '../utils/format.dart';
 import '../widgets/common.dart';
+import 'goal_sheet.dart';
 
 /// Reports: month-wise and year-wise summaries with charts, plus monthly
 /// savings / spending targets and planned-vs-actual comparison.
@@ -75,10 +76,11 @@ class _MonthlyReport extends StatelessWidget {
           Expanded(child: StatCard(label: 'Savings rate', value: income > 0 ? '${(savings / income * 100).toStringAsFixed(0)}%' : '—', icon: Icons.percent, color: Colors.indigo)),
         ]),
         const SizedBox(height: 8),
-        SectionHeader('Targets — ${Fmt.monthYear(y, m)}', trailing: TextButton.icon(
-          onPressed: () => _setTarget(context, s, y, m, target),
+        SectionHeader('Goals — ${Fmt.monthYear(y, m)}', trailing: TextButton.icon(
+          onPressed: () =>
+              showGoalSheet(context, year: y, month: m, existing: target),
           icon: const Icon(Icons.flag, size: 18),
-          label: Text(target == null ? 'Set' : 'Edit'),
+          label: Text(target == null ? 'Set goal' : 'Edit goal'),
         )),
         _targetCard(context, target, savings, expense, cur),
         const SizedBox(height: 8),
@@ -94,7 +96,7 @@ class _MonthlyReport extends StatelessWidget {
 
   Widget _targetCard(BuildContext context, Target? t, double savings, double expense, String cur) {
     if (t == null) {
-      return const Card(child: Padding(padding: EdgeInsets.all(16), child: Text('No target set for this month. Tap “Set” to add a savings goal and spending limit.')));
+      return const Card(child: Padding(padding: EdgeInsets.all(16), child: Text('No goal set for this month. Tap “Set goal” to add a savings goal and spending limit.')));
     }
     Widget bar(String label, double actual, double goal, {required bool lowerIsBetter}) {
       final double ratio = goal == 0 ? 0.0 : (actual / goal).clamp(0.0, 1.0).toDouble();
@@ -129,44 +131,6 @@ class _MonthlyReport extends StatelessWidget {
     );
   }
 
-  void _setTarget(BuildContext context, AppState s, int y, int m, Target? existing) {
-    final savings = TextEditingController(text: existing?.savingsTarget.toStringAsFixed(0) ?? '');
-    final limit = TextEditingController(text: existing?.spendingLimit.toStringAsFixed(0) ?? '');
-    final notes = TextEditingController(text: existing?.notes ?? '');
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Target — ${Fmt.monthYear(y, m)}'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(controller: savings, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Savings goal')),
-            const SizedBox(height: 8),
-            TextField(controller: limit, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Spending limit')),
-            const SizedBox(height: 8),
-            TextField(controller: notes, decoration: const InputDecoration(labelText: 'Notes')),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          FilledButton(
-            onPressed: () {
-              s.setTarget(Target(
-                id: existing?.id ?? newId('tgt'),
-                year: y,
-                month: m,
-                savingsTarget: double.tryParse(savings.text) ?? 0,
-                spendingLimit: double.tryParse(limit.text) ?? 0,
-                notes: notes.text.trim(),
-              ));
-              Navigator.pop(ctx);
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 class _YearlyReport extends StatelessWidget {

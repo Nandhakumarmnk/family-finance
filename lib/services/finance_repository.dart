@@ -169,6 +169,10 @@ class FinanceRepository implements FinanceStore {
       pendingFamilyId: profile.pendingFamilyId,
       pendingFamilyName: profile.pendingFamilyName,
       customPhotoUrl: profile.customPhotoUrl,
+      themeMode: profile.themeMode,
+      themeSeed: profile.themeSeed,
+      notificationsEnabled: profile.notificationsEnabled,
+      reminderHour: profile.reminderHour,
     );
 
     final cats =

@@ -10,9 +10,25 @@ import '../utils/category_icons.dart';
 import '../utils/format.dart';
 import '../widgets/common.dart';
 
-/// Expenses list filtered to the selected month, with add + delete.
-class ExpensesScreen extends StatelessWidget {
+/// Expenses list for the selected month, with search, a category filter, and
+/// add / edit / delete (so a wrongly-entered expense can be corrected).
+class ExpensesScreen extends StatefulWidget {
   const ExpensesScreen({super.key});
+
+  @override
+  State<ExpensesScreen> createState() => _ExpensesScreenState();
+}
+
+class _ExpensesScreenState extends State<ExpensesScreen> {
+  final _search = TextEditingController();
+  String _query = '';
+  String? _categoryFilter; // null == all categories
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -21,15 +37,31 @@ class ExpensesScreen extends StatelessWidget {
     final y = s.selectedYear;
     final m = s.selectedMonth;
 
-    final items = s.expenses
-        .where((e) => e.year == y && e.month == m)
-        .toList()
+    // Month → search text (category / notes / amount) → category filter.
+    final q = _query.trim().toLowerCase();
+    final items = s.expenses.where((e) {
+      if (e.year != y || e.month != m) return false;
+      if (_categoryFilter != null && e.category != _categoryFilter) return false;
+      if (q.isEmpty) return true;
+      return e.category.toLowerCase().contains(q) ||
+          e.notes.toLowerCase().contains(q) ||
+          e.paymentMode.toLowerCase().contains(q) ||
+          e.amount.toStringAsFixed(2).contains(q);
+    }).toList()
       ..sort((a, b) => b.date.compareTo(a.date));
     final total = items.fold(0.0, (a, e) => a + e.amount);
 
+    // Categories actually used this month, for the filter dropdown.
+    final monthCategories = (s.expenses
+            .where((e) => e.year == y && e.month == m)
+            .map((e) => e.category)
+            .toSet()
+            .toList()
+          ..sort());
+
     return Scaffold(
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _addDialog(context),
+        onPressed: () => _openForm(context),
         icon: const Icon(Icons.add),
         label: const Text('Add expense'),
       ),
@@ -37,44 +69,99 @@ class ExpensesScreen extends StatelessWidget {
         maxWidth: 720,
         child: Column(
           children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            child: PeriodPicker(
-              year: y,
-              month: m,
-              years: s.availableYears,
-              onYear: (v) => s.selectPeriod(year: v),
-              onMonth: (v) => s.selectPeriod(month: v),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: PeriodPicker(
+                year: y,
+                month: m,
+                years: s.availableYears,
+                onYear: (v) => s.selectPeriod(year: v),
+                onMonth: (v) => s.selectPeriod(month: v),
+              ),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Text('${Fmt.monthYear(y, m)} total',
-                    style: Theme.of(context).textTheme.bodyMedium),
-                const Spacer(),
-                Text(Fmt.currency(total, code: cur),
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleLarge
-                        ?.copyWith(fontWeight: FontWeight.bold)),
-              ],
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: TextField(
+                controller: _search,
+                onChanged: (v) => setState(() => _query = v),
+                decoration: InputDecoration(
+                  hintText: 'Search category, notes or amount',
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: _query.isEmpty
+                      ? null
+                      : IconButton(
+                          icon: const Icon(Icons.clear),
+                          onPressed: () {
+                            _search.clear();
+                            setState(() => _query = '');
+                          },
+                        ),
+                ),
+              ),
             ),
-          ),
-          Expanded(
-            child: items.isEmpty
-                ? const EmptyState(
-                    icon: Icons.receipt_long_outlined,
-                    message: 'No expenses for this month.\nTap “Add expense”.')
-                : ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 90),
-                    itemCount: items.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
-                    itemBuilder: (_, i) => _tile(context, items[i], cur),
+            if (monthCategories.isNotEmpty)
+              SizedBox(
+                height: 44,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: FilterChip(
+                        label: const Text('All'),
+                        selected: _categoryFilter == null,
+                        onSelected: (_) =>
+                            setState(() => _categoryFilter = null),
+                      ),
+                    ),
+                    for (final c in monthCategories)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: FilterChip(
+                          label: Text(c),
+                          selected: _categoryFilter == c,
+                          onSelected: (sel) =>
+                              setState(() => _categoryFilter = sel ? c : null),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Text(
+                    (q.isEmpty && _categoryFilter == null)
+                        ? '${Fmt.monthYear(y, m)} total'
+                        : 'Filtered total (${items.length})',
+                    style: Theme.of(context).textTheme.bodyMedium,
                   ),
-          ),
-        ],
+                  const Spacer(),
+                  Text(Fmt.currency(total, code: cur),
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleLarge
+                          ?.copyWith(fontWeight: FontWeight.bold)),
+                ],
+              ),
+            ),
+            Expanded(
+              child: items.isEmpty
+                  ? EmptyState(
+                      icon: Icons.receipt_long_outlined,
+                      message: (q.isNotEmpty || _categoryFilter != null)
+                          ? 'No expenses match your search.'
+                          : 'No expenses for this month.\nTap “Add expense”.')
+                  : ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 90),
+                      itemCount: items.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                      itemBuilder: (_, i) => _tile(context, items[i], cur),
+                    ),
+            ),
+          ],
         ),
       ),
     );
@@ -84,6 +171,8 @@ class ExpensesScreen extends StatelessWidget {
     return Dismissible(
       key: ValueKey(e.id),
       direction: DismissDirection.endToStart,
+      confirmDismiss: (_) => _confirmDelete(context, e),
+      onDismissed: (_) => context.read<AppState>().deleteExpense(e.id),
       background: Container(
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 20),
@@ -93,14 +182,14 @@ class ExpensesScreen extends StatelessWidget {
         ),
         child: const Icon(Icons.delete, color: Colors.white),
       ),
-      onDismissed: (_) => context.read<AppState>().deleteExpense(e.id),
       child: Card(
         child: ListTile(
-          onTap: e.hasReceipt ? () => _viewReceipt(context, e.receiptUrl) : null,
+          onTap: () => _openForm(context, existing: e),
           leading: CircleAvatar(
             backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
             child: Icon(
-              CategoryIcons.byKey(context.read<AppState>().iconKeyFor(e.category)),
+              CategoryIcons.byKey(
+                  context.read<AppState>().iconKeyFor(e.category)),
               size: 20,
               color: Theme.of(context).colorScheme.onSecondaryContainer,
             ),
@@ -121,15 +210,73 @@ class ExpensesScreen extends StatelessWidget {
             '${e.notes.isNotEmpty ? '\n${e.notes}' : ''}',
           ),
           isThreeLine: e.notes.isNotEmpty,
-          trailing: Text(Fmt.currency(e.amount, code: cur),
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(Fmt.currency(e.amount, code: cur),
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 16)),
+              PopupMenuButton<String>(
+                onSelected: (v) {
+                  switch (v) {
+                    case 'edit':
+                      _openForm(context, existing: e);
+                      break;
+                    case 'receipt':
+                      _viewReceipt(context, e.receiptUrl);
+                      break;
+                    case 'delete':
+                      _confirmDelete(context, e).then((ok) {
+                        if (ok == true) {
+                          context.read<AppState>().deleteExpense(e.id);
+                        }
+                      });
+                      break;
+                  }
+                },
+                itemBuilder: (_) => [
+                  const PopupMenuItem(value: 'edit', child: Text('Edit')),
+                  if (e.hasReceipt)
+                    const PopupMenuItem(
+                        value: 'receipt', child: Text('View receipt')),
+                  const PopupMenuItem(value: 'delete', child: Text('Delete')),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
+  Future<bool> _confirmDelete(BuildContext context, Expense e) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete expense?'),
+        content: Text(
+            '${e.category} · ${Fmt.currency(e.amount, code: context.read<AppState>().currency)} on ${Fmt.date(e.date)} will be removed.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              style: FilledButton.styleFrom(
+                  backgroundColor: Theme.of(ctx).colorScheme.error),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Delete')),
+        ],
+      ),
+    );
+    // When invoked by Dismissible, returning true lets it complete the swipe
+    // (the model already deletes on onDismissed below); for the menu path the
+    // caller performs the delete.
+    return ok ?? false;
+  }
+
   /// Full-screen, pinch-to-zoom view of a receipt photo.
   void _viewReceipt(BuildContext context, String url) {
+    if (url.isEmpty) return;
     showDialog<void>(
       context: context,
       builder: (ctx) => Dialog(
@@ -166,18 +313,19 @@ class ExpensesScreen extends StatelessWidget {
     );
   }
 
-  void _addDialog(BuildContext context) {
+  void _openForm(BuildContext context, {Expense? existing}) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (_) => const _ExpenseForm(),
+      builder: (_) => _ExpenseForm(existing: existing),
     );
   }
 }
 
 class _ExpenseForm extends StatefulWidget {
-  const _ExpenseForm();
+  final Expense? existing;
+  const _ExpenseForm({this.existing});
 
   @override
   State<_ExpenseForm> createState() => _ExpenseFormState();
@@ -185,24 +333,36 @@ class _ExpenseForm extends StatefulWidget {
 
 class _ExpenseFormState extends State<_ExpenseForm> {
   final _form = GlobalKey<FormState>();
-  final _amount = TextEditingController();
-  final _notes = TextEditingController();
+  late final TextEditingController _amount;
+  late final TextEditingController _notes;
   final _picker = ImagePicker();
   late String _category;
-  String _mode = 'UPI';
-  DateTime _date = DateTime.now();
-  bool _fromWallet = false;
+  late String _mode;
+  late DateTime _date;
+  late bool _fromWallet;
   bool _saving = false;
-  Uint8List? _receiptBytes; // picked receipt photo, uploaded on save
+  Uint8List? _receiptBytes; // newly picked receipt photo, uploaded on save
+
+  bool get _isEdit => widget.existing != null;
 
   static const _modes = ['UPI', 'Cash', 'Card', 'Bank'];
 
   @override
   void initState() {
     super.initState();
+    final e = widget.existing;
     final names = context.read<AppState>().categoryNames;
-    _category = names.isNotEmpty ? names.first : 'Other';
+    _amount = TextEditingController(
+        text: e != null ? _trimAmount(e.amount) : '');
+    _notes = TextEditingController(text: e?.notes ?? '');
+    _category = e?.category ?? (names.isNotEmpty ? names.first : 'Other');
+    _mode = e?.paymentMode ?? 'UPI';
+    _date = e?.date ?? DateTime.now();
+    _fromWallet = e?.fromFamilyWallet ?? false;
   }
+
+  static String _trimAmount(double v) =>
+      v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toString();
 
   @override
   void dispose() {
@@ -215,7 +375,7 @@ class _ExpenseFormState extends State<_ExpenseForm> {
     final x = await _picker.pickImage(
       source: ImageSource.gallery,
       maxWidth: 1600,
-      imageQuality: 70, // keep uploads small
+      imageQuality: 70,
     );
     if (x == null) return;
     final bytes = await x.readAsBytes();
@@ -223,27 +383,34 @@ class _ExpenseFormState extends State<_ExpenseForm> {
   }
 
   Future<void> _submit() async {
-    if (_saving) return; // guard against double/triple taps while saving
+    if (_saving) return;
     if (!_form.currentState!.validate()) return;
     setState(() => _saving = true);
     final app = context.read<AppState>();
-    final id = newId('exp');
-    // Upload the receipt first (if any) so the URL is stored with the expense.
-    var receiptUrl = '';
+    final id = widget.existing?.id ?? newId('exp');
+
+    // Keep the existing receipt unless the user picked a new one.
+    var receiptUrl = widget.existing?.receiptUrl ?? '';
     if (_receiptBytes != null) {
       final url = await app.uploadReceipt(id, _receiptBytes!);
       if (url != null) receiptUrl = url;
     }
-    await app.addExpense(Expense(
-          id: id,
-          date: _date,
-          category: _category,
-          amount: double.parse(_amount.text.trim()),
-          paymentMode: _mode,
-          notes: _notes.text.trim(),
-          fromFamilyWallet: _fromWallet,
-          receiptUrl: receiptUrl,
-        ));
+
+    final expense = Expense(
+      id: id,
+      date: _date,
+      category: _category,
+      amount: double.parse(_amount.text.trim()),
+      paymentMode: _mode,
+      notes: _notes.text.trim(),
+      fromFamilyWallet: _fromWallet,
+      receiptUrl: receiptUrl,
+    );
+    if (_isEdit) {
+      await app.updateExpense(expense);
+    } else {
+      await app.addExpense(expense);
+    }
     if (mounted) Navigator.pop(context);
   }
 
@@ -270,14 +437,17 @@ class _ExpenseFormState extends State<_ExpenseForm> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('Add expense', style: Theme.of(context).textTheme.titleLarge),
+              Text(_isEdit ? 'Edit expense' : 'Add expense',
+                  style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 16),
               TextFormField(
                 controller: _amount,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
                 decoration: const InputDecoration(labelText: 'Amount'),
-                validator: (v) =>
-                    double.tryParse(v ?? '') == null ? 'Enter a valid number' : null,
+                validator: (v) => double.tryParse(v ?? '') == null
+                    ? 'Enter a valid number'
+                    : null,
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
@@ -308,17 +478,20 @@ class _ExpenseFormState extends State<_ExpenseForm> {
                 onChanged: (v) => setState(() => _mode = v ?? _mode),
               ),
               const SizedBox(height: 12),
-              DatePickerField(date: _date, onChanged: (d) => setState(() => _date = d)),
+              DatePickerField(
+                  date: _date, onChanged: (d) => setState(() => _date = d)),
               const SizedBox(height: 12),
               TextFormField(
                 controller: _notes,
-                decoration: const InputDecoration(labelText: 'Notes (optional)'),
+                decoration:
+                    const InputDecoration(labelText: 'Notes (optional)'),
               ),
               if (inFamily)
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Pay from family wallet'),
-                  subtitle: const Text('Deducts from the shared common wallet'),
+                  subtitle:
+                      const Text('Deducts from the shared common wallet'),
                   value: _fromWallet,
                   onChanged: (v) => setState(() => _fromWallet = v),
                 ),
@@ -330,7 +503,10 @@ class _ExpenseFormState extends State<_ExpenseForm> {
                       ? OutlinedButton.icon(
                           onPressed: _pickReceipt,
                           icon: const Icon(Icons.attach_file, size: 18),
-                          label: const Text('Attach receipt'),
+                          label: Text(
+                              (widget.existing?.hasReceipt ?? false)
+                                  ? 'Replace receipt'
+                                  : 'Attach receipt'),
                         )
                       : Row(
                           children: [
@@ -360,7 +536,7 @@ class _ExpenseFormState extends State<_ExpenseForm> {
                         height: 20,
                         width: 20,
                         child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Text('Save'),
+                    : Text(_isEdit ? 'Save changes' : 'Save'),
               ),
             ],
           ),
