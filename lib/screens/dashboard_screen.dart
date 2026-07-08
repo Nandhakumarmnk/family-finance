@@ -5,6 +5,7 @@ import '../models/reminder.dart';
 import '../state/app_state.dart';
 import '../utils/category_icons.dart';
 import '../utils/format.dart';
+import '../utils/image_data.dart';
 import '../widgets/common.dart';
 import 'budgets_screen.dart';
 import 'reminders_screen.dart';
@@ -199,9 +200,7 @@ class DashboardScreen extends StatelessWidget {
           CircleAvatar(
             radius: 24,
             backgroundColor: Colors.white.withOpacity(0.18),
-            backgroundImage: (s.profile?.avatarUrl?.isNotEmpty ?? false)
-                ? NetworkImage(s.profile!.avatarUrl!)
-                : null,
+            backgroundImage: imageProviderFor(s.profile?.avatarUrl),
             child: (s.profile?.avatarUrl?.isNotEmpty ?? false)
                 ? null
                 : Text(

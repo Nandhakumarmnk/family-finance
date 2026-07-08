@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../services/invite_service.dart';
 import '../state/app_state.dart';
 import '../utils/format.dart';
+import '../utils/image_data.dart';
 import '../widgets/common.dart';
 import 'family_setup_screen.dart';
 
@@ -96,10 +97,7 @@ class _AddDetailsScreenState extends State<AddDetailsScreen> {
                 children: [
                   CircleAvatar(
                     radius: 40,
-                    backgroundImage:
-                        (p.avatarUrl != null && p.avatarUrl!.isNotEmpty)
-                            ? NetworkImage(p.avatarUrl!)
-                            : null,
+                    backgroundImage: imageProviderFor(p.avatarUrl),
                     child: (p.avatarUrl == null || p.avatarUrl!.isEmpty)
                         ? Text(p.displayName.isEmpty ? '?' : p.displayName[0])
                         : null,

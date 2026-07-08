@@ -24,6 +24,10 @@ Future<void> main() async {
 /// Initialise Firebase only when a real `firebase_options.dart` is present
 /// (the shipped placeholder has empty keys). Returns true when the app should
 /// use the global cloud (Firestore) backend; false keeps the legacy Drive path.
+///
+/// Once on the cloud backend, file attachments (receipts + profile photo) are
+/// available automatically — they're stored as base64 in Firestore, so there's
+/// no Cloud Storage bucket to provision and no Blaze plan required.
 Future<bool> _initFirebase() async {
   try {
     final options = DefaultFirebaseOptions.currentPlatform;

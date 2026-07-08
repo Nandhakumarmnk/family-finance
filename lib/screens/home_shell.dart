@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../state/app_state.dart';
+import '../utils/image_data.dart';
 import 'add_details_screen.dart';
 import 'dashboard_screen.dart';
 import 'emi_screen.dart';
@@ -133,9 +134,9 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   Widget _avatar(AppState state) {
-    final url = state.profile?.avatarUrl;
-    if (url != null && url.isNotEmpty) {
-      return CircleAvatar(radius: 14, backgroundImage: NetworkImage(url));
+    final provider = imageProviderFor(state.profile?.avatarUrl);
+    if (provider != null) {
+      return CircleAvatar(radius: 14, backgroundImage: provider);
     }
     final initial = (state.profile?.displayName ?? '?').trim();
     return CircleAvatar(

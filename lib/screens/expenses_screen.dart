@@ -223,7 +223,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                       _openForm(context, existing: e);
                       break;
                     case 'receipt':
-                      _viewReceipt(context, e.receiptUrl);
+                      _viewReceipt(context, e);
                       break;
                     case 'delete':
                       _confirmDelete(context, e).then((ok) {
@@ -238,7 +238,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                   const PopupMenuItem(value: 'edit', child: Text('Edit')),
                   if (e.hasReceipt)
                     const PopupMenuItem(
-                        value: 'receipt', child: Text('View receipt')),
+                        value: 'receipt', child: Text('View bill / receipt')),
                   const PopupMenuItem(value: 'delete', child: Text('Delete')),
                 ],
               ),
@@ -274,9 +274,13 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     return ok ?? false;
   }
 
-  /// Full-screen, pinch-to-zoom view of a receipt photo.
-  void _viewReceipt(BuildContext context, String url) {
-    if (url.isEmpty) return;
+  /// Full-screen, pinch-to-zoom view of a bill / receipt. The image is fetched
+  /// on demand from Firestore (stored as base64), so it's only pulled when the
+  /// user actually opens it. Legacy http URLs, if any, still load directly.
+  void _viewReceipt(BuildContext context, Expense e) {
+    if (!e.hasReceipt) return;
+    final legacyUrl =
+        e.receiptUrl.startsWith('http') ? e.receiptUrl : null;
     showDialog<void>(
       context: context,
       builder: (ctx) => Dialog(
@@ -293,18 +297,31 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
             ),
             Flexible(
               child: InteractiveViewer(
-                child: Image.network(
-                  url,
-                  fit: BoxFit.contain,
-                  loadingBuilder: (c, child, progress) => progress == null
-                      ? child
-                      : const Padding(
-                          padding: EdgeInsets.all(40),
-                          child: CircularProgressIndicator()),
-                  errorBuilder: (c, err, s) => const Padding(
-                      padding: EdgeInsets.all(40),
-                      child: Text('Could not load the receipt.')),
-                ),
+                child: legacyUrl != null
+                    ? Image.network(
+                        legacyUrl,
+                        fit: BoxFit.contain,
+                        errorBuilder: (c, err, s) => const Padding(
+                            padding: EdgeInsets.all(40),
+                            child: Text('Could not load the receipt.')),
+                      )
+                    : FutureBuilder<Uint8List?>(
+                        future: context.read<AppState>().loadReceipt(e.id),
+                        builder: (c, snap) {
+                          if (snap.connectionState != ConnectionState.done) {
+                            return const Padding(
+                                padding: EdgeInsets.all(40),
+                                child: CircularProgressIndicator());
+                          }
+                          final bytes = snap.data;
+                          if (bytes == null) {
+                            return const Padding(
+                                padding: EdgeInsets.all(40),
+                                child: Text('Could not load the receipt.'));
+                          }
+                          return Image.memory(bytes, fit: BoxFit.contain);
+                        },
+                      ),
               ),
             ),
           ],
@@ -499,14 +516,25 @@ class _ExpenseFormState extends State<_ExpenseForm> {
                 const SizedBox(height: 12),
                 Align(
                   alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Bill / receipt (optional)',
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                          color:
+                              Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Align(
+                  alignment: Alignment.centerLeft,
                   child: _receiptBytes == null
                       ? OutlinedButton.icon(
                           onPressed: _pickReceipt,
                           icon: const Icon(Icons.attach_file, size: 18),
                           label: Text(
                               (widget.existing?.hasReceipt ?? false)
-                                  ? 'Replace receipt'
-                                  : 'Attach receipt'),
+                                  ? 'Replace bill / receipt'
+                                  : 'Attach bill / receipt'),
                         )
                       : Row(
                           children: [
@@ -516,7 +544,7 @@ class _ExpenseFormState extends State<_ExpenseForm> {
                                   width: 56, height: 56, fit: BoxFit.cover),
                             ),
                             const SizedBox(width: 12),
-                            const Text('Receipt attached'),
+                            const Text('Bill / receipt attached'),
                             const Spacer(),
                             IconButton(
                               tooltip: 'Remove',

@@ -4,15 +4,13 @@ This switches the app from "Google Drive, test users only" to a **free cloud
 backend (Cloud Firestore)** that works for **every Google user and family,
 worldwide**, with no OAuth verification and no server to run.
 
-The core app (Auth + Firestore) runs on Firebase's **Spark (free) plan** — **no
-credit card** — and we deliberately avoid Cloud Functions (those need Blaze).
+The whole app runs on Firebase's **Spark (free) plan** — **no credit card**. We
+deliberately avoid the two things that would force the paid Blaze plan: **Cloud
+Functions** and **Cloud Storage**. Auth + Firestore cover everything.
 
-The **optional** file-attachment feature (receipt photos, exported PDFs, profile
-pictures) uses **Cloud Storage**, which Firebase now only provisions on the
-**Blaze (pay-as-you-go) plan**. Blaze keeps a free usage tier (≈5 GB stored,
-1 GB/day download), so at household scale it stays **$0** — but it does require a
-card on file. Setting it up is covered in the optional section below; skip it and
-the app works exactly as before, just without attachments.
+File attachments (receipt photos + profile picture) work on the free plan too:
+they're stored as base64 **inside Firestore**, so there's no Cloud Storage
+bucket to provision and no card required. Nothing extra to enable — see §5b.
 
 ---
 
@@ -72,31 +70,28 @@ Firebase console → **Firestore Database → Rules** → paste the contents of
 [`firestore.rules`](firestore.rules) → **Publish**.
 
 These keep each person's data private and isolate every family (a family is
-reachable only via its secret code — see the file's header for details).
+reachable only via its secret code — see the file's header for details). The
+same file also covers the `users/{uid}/receipts` subcollection where receipt
+photos are stored, so there's nothing extra to publish for attachments.
 
-### 5b. (Optional) Enable file storage — receipts, PDFs, profile photos
+### 5b. File attachments — nothing to enable
 
-Skip this whole subsection to stay 100% free with no card; attachments just
-won't appear. To turn them on:
+Attachments (an optional **bill / receipt** photo on each expense, plus a custom
+**profile picture**) work out of the box on the free plan — **no Cloud Storage,
+no Blaze, no card.** Each receipt is downscaled and saved as base64 in its own
+Firestore document (`users/{uid}/receipts/{expenseId}`); the profile photo rides
+along inside the user's profile. Because it's all Firestore, it's covered by the
+rules you published in step 5 and works identically on **web and Android**.
 
-1. **Upgrade to Blaze:** console → ⚙️ **Usage and billing** → **Details &
-   settings** → **Modify plan** → **Blaze**. Link a billing account (needs a
-   card).
-2. **Cap the spend so it can't surprise you:** console → **Budgets & alerts**
-   (Google Cloud Billing) → create a budget of e.g. **$1** with email alerts at
-   50/90/100%. At household scale you'll never approach the free tier anyway.
-3. **Enable Storage:** Build → **Storage** → **Get started** → **production
-   mode** → same location as Firestore.
-4. **Publish the storage rules:** console → **Storage → Rules** → paste the
-   contents of [`storage.rules`](storage.rules) → **Publish**. They keep every
-   file private to the user who uploaded it (`users/{uid}/…`) and cap uploads to
-   10 MB images/PDFs.
-5. Make sure `flutterfire configure` (step 4) captured a **storageBucket** in
-   `lib/firebase_options.dart` — it's added automatically once Storage exists.
-   Re-run `flutterfire configure` if you enabled Storage afterwards.
+Once you're signed in on the cloud backend you'll see an **Attach bill /
+receipt (optional)** control when adding or editing an expense (tap the receipt
+to view it full-screen), and a tappable avatar in **My Details** for the photo.
 
-That's it — the app detects the bucket and shows an **Attach receipt** option on
-expenses; receipts open full-screen with pinch-to-zoom.
+> Because receipts live in Firestore documents (1 MiB each), the app downscales
+> images before saving and rejects anything still too large — pick a smaller
+> photo if prompted. PDF statements are still generated on demand under
+> **Reports → PDF statement** (preview / print / email / share); there's no
+> public "cloud link" for them, since that would need a Cloud Storage bucket.
 
 ## 6. Point Google sign-in at Firebase
 

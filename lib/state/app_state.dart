@@ -1,5 +1,6 @@
 // `Category` is also the name of a Flutter foundation annotation, so hide it to
 // avoid an ambiguous-import clash with our own `Category` model below.
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' hide Category;
@@ -18,14 +19,15 @@ import '../models/salary.dart';
 import '../models/target.dart';
 import '../models/user_profile.dart';
 import '../models/wallet_entry.dart';
+import '../services/attachment_store.dart';
 import '../services/auth_service.dart';
 import '../services/backend_service.dart';
 import '../services/drive_service.dart';
 import '../services/firestore_repository.dart';
 import '../services/local_cache.dart';
 import '../services/notification_service.dart';
-import '../services/storage_service.dart';
 import '../utils/format.dart';
+import '../utils/image_data.dart';
 import '../widgets/feedback.dart';
 import '../services/finance_repository.dart';
 
@@ -49,7 +51,7 @@ class AppState extends ChangeNotifier {
   late final AuthService _auth;
 
   FinanceStore? _repo;
-  StorageService? _storage;
+  AttachmentStore? _attachments;
   PersonalData? _personal;
   FamilyData? _family;
 
@@ -129,9 +131,19 @@ class AppState extends ChangeNotifier {
     _celebrate('Reminder time updated');
   }
 
-  /// Whether cloud file attachments (receipts, PDFs, avatars) are available —
-  /// only on the Firestore backend once signed in.
-  bool get canAttachFiles => _firestoreEnabled && _storage != null;
+  /// Sentinel stored in `Expense.receiptUrl` when a receipt lives in Firestore
+  /// (rather than as a legacy http URL). Only its non-emptiness matters to the
+  /// model (`hasReceipt`); the image itself is fetched on demand by expense id.
+  static const String _receiptMarker = 'fs:receipt';
+
+  /// Guardrail: reject a receipt whose base64 would risk Firestore's 1 MiB
+  /// per-document limit (leaves headroom for field names + metadata).
+  static const int _maxReceiptBase64 = 900 * 1024;
+
+  /// Whether file attachments (receipt photos, profile picture) are available —
+  /// true on the Firestore backend once signed in. Attachments are stored as
+  /// base64 in Firestore, so no Cloud Storage bucket (or Blaze plan) is needed.
+  bool get canAttachFiles => _attachments != null;
 
   /// True if the signed-in user is the family head (the Owner of the family).
   bool get isFamilyHead {
@@ -248,7 +260,7 @@ class AppState extends ChangeNotifier {
     _personal = null;
     _family = null;
     _repo = null;
-    _storage = null;
+    _attachments = null;
     _refreshing = false;
     status = AppStatus.signedOut;
     notifyListeners();
@@ -289,7 +301,7 @@ class AppState extends ChangeNotifier {
     final account = _auth.account!;
     if (_firestoreEnabled) {
       _repo = FirestoreRepository(uid: account.uid);
-      _storage = StorageService(account.uid);
+      _attachments = AttachmentStore(account.uid);
     } else {
       final client = await _auth.authenticatedClient();
       if (client == null) {
@@ -402,44 +414,30 @@ class AppState extends ChangeNotifier {
   /// The avatar URL to display (custom uploaded photo, else the Google one).
   String? get avatarUrl => _personal?.profile.avatarUrl;
 
-  /// Upload a new custom avatar; returns true on success. Persisted so it wins
-  /// over the Google account photo everywhere.
+  /// Set a new custom avatar; returns true on success. Persisted so it wins
+  /// over the Google account photo everywhere. The photo is downscaled and
+  /// stored inline on the profile as a base64 data URI — it's small enough to
+  /// sit in the single Firestore profile document and render instantly.
   Future<bool> updateProfilePhoto(Uint8List bytes) async {
     if (!canAttachFiles || _personal == null) return false;
     try {
-      final url = await _storage!.uploadProfilePhoto(bytes);
-      _personal!.profile.customPhotoUrl = url;
+      final jpeg = encodeBoundedJpeg(bytes, maxWidth: 384, quality: 75);
+      _personal!.profile.customPhotoUrl = jpegDataUri(jpeg);
       await _persistPersonal();
       _celebrate('Photo updated');
       return true;
     } catch (_) {
-      AppFeedback.error('Could not upload the photo');
+      AppFeedback.error('Could not update the photo');
       return false;
     }
   }
 
-  /// Remove the custom avatar (falls back to the Google photo / initial).
+  /// Remove the custom avatar (falls back to the Google photo / initial). The
+  /// photo lives inline on the profile, so clearing the field is enough.
   Future<void> removeProfilePhoto() async {
     if (_personal == null) return;
     _personal!.profile.customPhotoUrl = '';
-    if (canAttachFiles) {
-      try {
-        await _storage!.deleteProfilePhoto();
-      } catch (_) {/* best-effort */}
-    }
     await _persistPersonal();
-  }
-
-  /// Upload a generated PDF report; returns its shareable download URL, or null
-  /// if cloud files aren't available or the upload failed.
-  Future<String?> uploadReport(String fileName, Uint8List bytes) async {
-    if (!canAttachFiles) return null;
-    try {
-      return await _storage!.uploadReport(fileName, bytes);
-    } catch (_) {
-      AppFeedback.error('Could not upload the report');
-      return null;
-    }
   }
 
   Future<void> updateProfile({
@@ -680,14 +678,37 @@ class AppState extends ChangeNotifier {
   }
 
   // --- expenses --------------------------------------------------------------
-  /// Upload a receipt image for [expenseId] and return its download URL, or
-  /// null if cloud files aren't available or the upload failed. Best-effort.
+  /// Store a receipt image for [expenseId] and return a marker to save on the
+  /// expense, or null if attachments aren't available or the save failed. The
+  /// image is downscaled and kept as base64 in Firestore (no Cloud Storage).
   Future<String?> uploadReceipt(String expenseId, Uint8List bytes) async {
-    if (!canAttachFiles) return null;
+    final store = _attachments;
+    if (store == null) return null;
     try {
-      return await _storage!.uploadReceipt(expenseId, bytes);
+      final jpeg = encodeBoundedJpeg(bytes);
+      final b64 = base64Encode(jpeg);
+      if (b64.length > _maxReceiptBase64) {
+        AppFeedback.error('That image is too large — try a smaller photo');
+        return null;
+      }
+      await store.putReceipt(expenseId, b64);
+      return _receiptMarker;
     } catch (_) {
-      AppFeedback.error('Could not upload the receipt');
+      AppFeedback.error('Could not save the receipt');
+      return null;
+    }
+  }
+
+  /// Fetch a stored receipt's image bytes for [expenseId], or null if there's
+  /// no receipt (or it can't be loaded). Used by the full-screen viewer.
+  Future<Uint8List?> loadReceipt(String expenseId) async {
+    final store = _attachments;
+    if (store == null) return null;
+    try {
+      final b64 = await store.getReceipt(expenseId);
+      if (b64 == null || b64.isEmpty) return null;
+      return base64Decode(b64);
+    } catch (_) {
       return null;
     }
   }
@@ -776,7 +797,9 @@ class AppState extends ChangeNotifier {
       list.removeAt(idx);
       _logActivity('Deleted', 'Expense', e.category, e.amount);
       // Clean up the receipt photo too (fire-and-forget).
-      if (e.hasReceipt && canAttachFiles) _storage!.deleteReceipt(e.id);
+      if (e.hasReceipt && _attachments != null) {
+        _attachments!.deleteReceipt(e.id);
+      }
       // Remove any linked family-wallet spend as well.
       if (e.fromFamilyWallet && _family != null) {
         final wId = 'w_$id';

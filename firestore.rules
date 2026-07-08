@@ -30,6 +30,13 @@ service cloud.firestore {
     // --- Personal workbook: strictly the signed-in owner -------------------
     match /users/{uid} {
       allow read, write: if signedIn() && request.auth.uid == uid;
+
+      // Receipt photos live here as base64 — one document per expense — so
+      // attachments need no Cloud Storage bucket (which would force Blaze).
+      // Same owner-only access as the workbook above.
+      match /receipts/{docId} {
+        allow read, write: if signedIn() && request.auth.uid == uid;
+      }
     }
 
     // --- Shared family workbook --------------------------------------------

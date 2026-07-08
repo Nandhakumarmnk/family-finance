@@ -17,6 +17,10 @@ import 'package:flutter/foundation.dart'
 /// (see `_initFirebase` in main.dart) and stores all data in Firestore — which
 /// works for every Google user worldwide with no verification.
 ///
+/// File attachments (receipt photos, profile picture) ride along for free:
+/// they're stored as base64 in Firestore, so there's no Cloud Storage bucket to
+/// set up and no Blaze plan needed — the whole app stays on the free Spark plan.
+///
 /// (These values are NOT secrets; Firebase web/app keys ship in every client.
 /// Access is protected by Firestore **security rules**, see firestore.rules.)
 class DefaultFirebaseOptions {

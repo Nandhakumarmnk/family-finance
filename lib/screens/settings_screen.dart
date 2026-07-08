@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../services/backend_service.dart';
 import '../state/app_state.dart';
+import '../utils/image_data.dart';
 import '../widgets/common.dart';
 import '../widgets/feedback.dart';
 import 'activity_screen.dart';
@@ -209,8 +210,7 @@ class _ProfileHeader extends StatelessWidget {
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         leading: CircleAvatar(
           radius: 26,
-          backgroundImage:
-              (url != null && url.isNotEmpty) ? NetworkImage(url) : null,
+          backgroundImage: imageProviderFor(url),
           child: (url == null || url.isEmpty)
               ? Text(initial.isEmpty ? '?' : initial[0].toUpperCase(),
                   style: const TextStyle(fontSize: 20))
