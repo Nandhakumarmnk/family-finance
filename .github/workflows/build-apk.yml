@@ -32,7 +32,7 @@ jobs:
       - name: Generate Android platform folder
         # The repo only ships lib/ + pubspec; this regenerates android/ etc.
         # It will NOT overwrite existing lib/ source.
-        run: flutter create . --org net.ramrajcotton --project-name family_finance
+        run: flutter create . --org com.nandhakumar --project-name family_finance
 
       - name: Configure Android native bits (biometric + Firebase minSdk)
         # `flutter create` regenerates a default MainActivity that extends
@@ -69,6 +69,11 @@ jobs:
           for GF in android/app/build.gradle android/app/build.gradle.kts; do
             [ -f "$GF" ] || continue
             sed -i -E 's/minSdk(Version)?[ =]+flutter\.minSdkVersion/minSdk = 26/' "$GF"
+            # App package id. flutter create derives it from --org + project name
+            # (…family_finance, with an underscore); pin it to the exact id we
+            # registered in Firebase. Only the applicationId line is touched, so
+            # the namespace/Kotlin package stay consistent and compile.
+            sed -i -E 's/applicationId([ =]*)"[^"]*"/applicationId\1"com.nandhakumar.familyfinance"/' "$GF"
             case "$GF" in
               *.kts)
                 printf '\nandroid {\n    compileOptions {\n        isCoreLibraryDesugaringEnabled = true\n    }\n}\ndependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")\n}\n' >> "$GF"
