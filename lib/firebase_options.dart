@@ -25,19 +25,34 @@ import 'package:flutter/foundation.dart'
 /// Access is protected by Firestore **security rules**, see firestore.rules.)
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
-    if (kIsWeb) return _empty;
+    if (kIsWeb) return _web;
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
       case TargetPlatform.iOS:
       default:
-        return _empty;
+        return _android;
     }
   }
 
-  static const FirebaseOptions _empty = FirebaseOptions(
-    apiKey: '',
-    appId: '',
-    messagingSenderId: '',
-    projectId: '',
+  // Web app — Firebase console → Project settings → Your apps → Web.
+  static const FirebaseOptions _web = FirebaseOptions(
+    apiKey: 'AIzaSyCIbh_4ZEfdQaton2p2WsCVTB1FVO6G0Kk',
+    appId: '1:380367970706:web:a6a676b388610cc3d8a14b',
+    messagingSenderId: '380367970706',
+    projectId: 'family-finance-4fab0',
+    authDomain: 'family-finance-4fab0.firebaseapp.com',
+    measurementId: 'G-S90LGNJZPQ',
+  );
+
+  // Android app. apiKey / messagingSenderId / projectId are project-wide (same
+  // as web); only `appId` differs. It currently reuses the web appId as a
+  // stopgap so Firestore works — replace it with the ANDROID app id
+  // (1:380367970706:android:…) after you register the Android app in the
+  // console (Project settings → Add app → Android).
+  static const FirebaseOptions _android = FirebaseOptions(
+    apiKey: 'AIzaSyCIbh_4ZEfdQaton2p2WsCVTB1FVO6G0Kk',
+    appId: '1:380367970706:web:a6a676b388610cc3d8a14b',
+    messagingSenderId: '380367970706',
+    projectId: 'family-finance-4fab0',
   );
 }
