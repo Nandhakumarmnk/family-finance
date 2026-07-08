@@ -1535,10 +1535,12 @@ class AppState extends ChangeNotifier {
             'A Web OAuth client must list this site as an authorized '
             'JavaScript origin, and its client ID must be embedded in the page.';
       }
-      return 'Google Sign-In is not set up for this app build yet.\n\n'
-          "This build's signing fingerprint (SHA-1) must be registered with "
-          'an Android OAuth client in Google Cloud Console, for the package '
-          'net.ramrajcotton.family_finance.';
+      return 'Google Sign-In could not complete.\n\n'
+          'If it works for you but not others, the OAuth consent screen is '
+          'likely still in "Testing" — publish it to production (no '
+          'verification is needed for basic profile scopes). Otherwise this '
+          "build's SHA-1 must be registered for an Android OAuth client under "
+          'the package com.nandhakumar.familyfinance.';
     }
     return s;
   }
