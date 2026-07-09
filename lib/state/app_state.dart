@@ -145,6 +145,10 @@ class AppState extends ChangeNotifier {
   /// base64 in Firestore, so no Cloud Storage bucket (or Blaze plan) is needed.
   bool get canAttachFiles => _attachments != null;
 
+  /// True when the app runs on the global Firestore backend (vs legacy Drive).
+  /// Lets screens adapt copy that would otherwise promise Drive storage.
+  bool get cloudBackend => _firestoreEnabled;
+
   /// True if the signed-in user is the family head (the Owner of the family).
   bool get isFamilyHead {
     final email = _personal?.profile.email ?? '';
@@ -1520,8 +1524,16 @@ class AppState extends ChangeNotifier {
   /// Turn opaque platform errors into something a user can act on. The most
   /// common one on a fresh build is a Google Sign-In configuration problem,
   /// which surfaces as a null-check / DEVELOPER_ERROR (ApiException 10).
+  /// The raw error is appended so a screenshot of this card is enough to tell
+  /// the config failures apart (unregistered SHA-1 vs consent screen vs
+  /// disabled provider all look identical otherwise).
   String _friendlyError(Object e) {
     final s = e.toString();
+    if (s.contains('operation-not-allowed')) {
+      return 'Google Sign-In is disabled for this Firebase project.\n\n'
+          'Enable it: Firebase console → Authentication → Sign-in method → '
+          'Google → Enable.\n\nDetails: $s';
+    }
     final isConfig = s.contains('Null check operator') ||
         s.contains('ApiException: 10') ||
         s.contains('sign_in_failed') ||
@@ -1533,14 +1545,16 @@ class AppState extends ChangeNotifier {
       if (kIsWeb) {
         return 'Google Sign-In is not set up for the web app yet.\n\n'
             'A Web OAuth client must list this site as an authorized '
-            'JavaScript origin, and its client ID must be embedded in the page.';
+            'JavaScript origin, and its client ID must be embedded in the '
+            'page.\n\nDetails: $s';
       }
       return 'Google Sign-In could not complete.\n\n'
-          'If it works for you but not others, the OAuth consent screen is '
-          'likely still in "Testing" — publish it to production (no '
-          'verification is needed for basic profile scopes). Otherwise this '
-          "build's SHA-1 must be registered for an Android OAuth client under "
-          'the package com.nandhakumar.familyfinance.';
+          "Usually this build's signing SHA-1 is not registered: Firebase "
+          'console → Project settings → Your apps → Android app '
+          'com.nandhakumar.familyfinance → Add fingerprint. If sign-in works '
+          'for you but not others, publish the OAuth consent screen to '
+          'production (no verification needed for basic profile scopes).'
+          '\n\nDetails: $s';
     }
     return s;
   }

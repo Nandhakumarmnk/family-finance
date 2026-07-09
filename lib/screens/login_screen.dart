@@ -56,8 +56,13 @@ class LoginScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Salary, expenses, EMIs and a shared family wallet — '
-                      'all stored securely in your own Google Drive.',
+                      state.cloudBackend
+                          ? 'Salary, expenses, EMIs and a shared family '
+                              'wallet — synced securely across all your '
+                              "family's devices."
+                          : 'Salary, expenses, EMIs and a shared family '
+                              'wallet — all stored securely in your own '
+                              'Google Drive.',
                       textAlign: TextAlign.center,
                       style: theme.textTheme.bodyMedium
                           ?.copyWith(color: Colors.white.withOpacity(0.82)),
@@ -129,7 +134,11 @@ class LoginScreen extends StatelessWidget {
                                 const SizedBox(width: 6),
                                 Flexible(
                                   child: Text(
-                                    'Securely syncs your family workbook on Drive',
+                                    state.cloudBackend
+                                        ? 'Securely syncs with your family '
+                                            'in real time'
+                                        : 'Securely syncs your family '
+                                            'workbook on Drive',
                                     style: theme.textTheme.labelSmall?.copyWith(
                                         color: scheme.onSurfaceVariant),
                                   ),
@@ -142,7 +151,9 @@ class LoginScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 20),
                     Text(
-                      'Your data stays in your Google Drive.',
+                      state.cloudBackend
+                          ? 'Sign-in needs only your basic Google profile.'
+                          : 'Your data stays in your Google Drive.',
                       style: theme.textTheme.labelSmall
                           ?.copyWith(color: Colors.white.withOpacity(0.6)),
                     ),
