@@ -1,3 +1,4 @@
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -106,6 +107,13 @@ class SettingsScreen extends StatelessWidget {
                 subtitle: 'A log of what changed and when',
                 onTap: () => _push(context, const ActivityScreen()),
               ),
+              if (s.cloudBackend)
+                _NavTile(
+                  icon: Icons.upload_file_outlined,
+                  title: 'Import old Drive workbook',
+                  subtitle: 'Bring your data from a personal_….xlsx file',
+                  onTap: () => _importWorkbook(context),
+                ),
               if (BackendService.isConfigured)
                 _NavTile(
                   icon: Icons.mark_email_read_outlined,
@@ -179,6 +187,32 @@ class SettingsScreen extends StatelessWidget {
       ),
     );
     if (ok == true && context.mounted) context.read<AppState>().signOut();
+  }
+
+  /// Pick a legacy Drive workbook (.xlsx) and merge its contents into the
+  /// cloud account. Additive and idempotent — see AppState.importLegacyWorkbook.
+  Future<void> _importWorkbook(BuildContext context) async {
+    final state = context.read<AppState>();
+    final messenger = ScaffoldMessenger.of(context);
+    const group = XTypeGroup(
+      label: 'Excel workbook',
+      extensions: ['xlsx'],
+      mimeTypes: [
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      ],
+    );
+    final XFile? file = await openFile(acceptedTypeGroups: const [group]);
+    if (file == null) return;
+    messenger.showSnackBar(const SnackBar(content: Text('Importing…')));
+    try {
+      final bytes = await file.readAsBytes();
+      final summary = await state.importLegacyWorkbook(bytes);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(SnackBar(content: Text(summary)));
+    } catch (e) {
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(SnackBar(content: Text('Import failed: $e')));
+    }
   }
 
   Future<void> _emailReport(BuildContext context) async {

@@ -23,6 +23,7 @@ import '../services/attachment_store.dart';
 import '../services/auth_service.dart';
 import '../services/backend_service.dart';
 import '../services/drive_service.dart';
+import '../services/excel_codec.dart';
 import '../services/firestore_repository.dart';
 import '../services/local_cache.dart';
 import '../services/notification_service.dart';
@@ -299,6 +300,77 @@ class AppState extends ChangeNotifier {
       _setBusy(false);
     }
     await signOut();
+  }
+
+  /// Import a legacy Drive personal workbook (personal_<email>.xlsx) into the
+  /// signed-in account. Rows merge by their ids — anything already present is
+  /// left untouched, so importing the same file twice never duplicates data.
+  /// Profile details (phone, occupation) only fill fields that are still
+  /// empty. Returns a short human-readable summary for the UI.
+  Future<String> importLegacyWorkbook(Uint8List bytes) async {
+    final p = _personal;
+    if (p == null || _repo == null) return 'Sign in before importing.';
+
+    final Map<String, List<List<dynamic>>> wb;
+    try {
+      wb = ExcelCodec.decode(bytes);
+    } catch (_) {
+      return 'Could not read that file — is it a .xlsx workbook?';
+    }
+    if (!wb.containsKey('Profile') && !wb.containsKey('Expenses')) {
+      return 'That file does not look like a Family Finance workbook.';
+    }
+
+    int addNew<T>(List<T> into, String sheet, T Function(List<dynamic>) fromRow,
+        String Function(T) keyOf) {
+      final have = into.map(keyOf).toSet();
+      var added = 0;
+      for (final row in ExcelCodec.dataRows(wb, sheet)) {
+        try {
+          final item = fromRow(row);
+          if (have.add(keyOf(item))) {
+            into.add(item);
+            added++;
+          }
+        } catch (_) {/* skip a malformed row rather than fail the import */}
+      }
+      return added;
+    }
+
+    final counts = <String, int>{
+      'income': addNew(p.salaries, 'Salary', Salary.fromRow, (e) => e.id),
+      'expenses': addNew(p.expenses, 'Expenses', Expense.fromRow, (e) => e.id),
+      'EMIs': addNew(p.emis, 'EMIs', Emi.fromRow, (e) => e.id),
+      'goals': addNew(p.targets, 'Targets', Target.fromRow, (e) => e.id),
+      'activity entries':
+          addNew(p.activities, 'Activity', Activity.fromRow, (e) => e.id),
+      'categories':
+          addNew(p.categories, 'Categories', Category.fromRow, (e) => e.name),
+      'reminders':
+          addNew(p.reminders, 'Reminders', Reminder.fromRow, (e) => e.id),
+      'budgets':
+          addNew(p.budgets, 'Budgets', Budget.fromRow, (e) => e.category),
+    };
+
+    // Fill still-empty profile details from the old workbook (never overwrite).
+    final profRows = ExcelCodec.dataRows(wb, 'Profile');
+    if (profRows.isNotEmpty) {
+      final old = UserProfile.fromRow(profRows.first);
+      if (p.profile.phone.isEmpty) p.profile.phone = old.phone;
+      if (p.profile.occupation.isEmpty) p.profile.occupation = old.occupation;
+    }
+
+    final total = counts.values.fold<int>(0, (a, b) => a + b);
+    if (total == 0) {
+      return 'Nothing new to import — it is all in the cloud already.';
+    }
+    await _persistPersonal();
+    final parts = counts.entries
+        .where((e) => e.value > 0)
+        .map((e) => '${e.value} ${e.key}')
+        .join(', ');
+    _celebrate('Workbook imported');
+    return 'Imported $parts.';
   }
 
   Future<void> _onSignedIn() async {
@@ -1458,7 +1530,7 @@ class AppState extends ChangeNotifier {
     try {
       await _repo!.savePersonal(_personal!);
     } catch (e) {
-      error = 'Could not save to Drive: $e';
+      error = 'Could not save your data: $e';
     } finally {
       _setBusy(false);
     }

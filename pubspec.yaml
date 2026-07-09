@@ -39,6 +39,8 @@ dependencies:
 
   # Excel storage (dynamic-value API; stable and simple)
   excel: ^2.1.0
+  # Pick a legacy Drive workbook (.xlsx) to import into the cloud backend.
+  file_selector: ^1.0.3
 
   # Local cache / preferences
   shared_preferences: ^2.3.2
