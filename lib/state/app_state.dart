@@ -1647,14 +1647,37 @@ class AppState extends ChangeNotifier {
     return _family!.ledger.length != before;
   }
 
-  /// Show a success popup after a mutation, or a soft error if the Drive save
-  /// failed (the change is still kept locally).
+  /// Show a success popup after a mutation, or the real reason it didn't sync
+  /// to the cloud (the change is still kept on-device). We surface [error]
+  /// verbatim rather than a canned "Drive" message — the app syncs to Firestore,
+  /// not Drive, and the true cause (e.g. rules/permission) is what users need.
   void _celebrate(String successMessage) {
     if (error == null) {
       AppFeedback.success(successMessage);
     } else {
-      AppFeedback.error('Saved on device — Drive sync failed');
+      AppFeedback.error(error!);
     }
+  }
+
+  /// Turn a Firestore write failure into a concise, actionable message. Names
+  /// the real cause — permission (rules not published) vs offline — instead of
+  /// a misleading Drive reference.
+  String _cloudWriteError(Object e, String what) {
+    final s = e.toString().toLowerCase();
+    if (s.contains('permission-denied') ||
+        s.contains('permission_denied') ||
+        s.contains('insufficient permissions')) {
+      return 'Cloud rejected the change (permission denied). Update the family '
+          'security rules: Firebase console → Firestore Database → Rules → '
+          'paste firestore.rules → Publish, then try again.';
+    }
+    if (s.contains('unavailable') ||
+        s.contains('network') ||
+        s.contains('offline')) {
+      return 'You appear offline — saved on this device and will sync when '
+          'you’re back online.';
+    }
+    return 'Could not save $what to the cloud: $e';
   }
 
   // --- internals -------------------------------------------------------------
@@ -1677,7 +1700,7 @@ class AppState extends ChangeNotifier {
     try {
       await _repo!.savePersonal(_personal!);
     } catch (e) {
-      error = 'Could not save your data: $e';
+      error = _cloudWriteError(e, 'your data');
     } finally {
       _setBusy(false);
     }
@@ -1705,7 +1728,7 @@ class AppState extends ChangeNotifier {
     try {
       await _repo!.saveFamily(_family!);
     } catch (e) {
-      error = 'Could not save family workbook: $e';
+      error = _cloudWriteError(e, 'the family wallet');
     } finally {
       _setBusy(false);
     }
@@ -1723,7 +1746,7 @@ class AppState extends ChangeNotifier {
     try {
       await _repo!.saveFamilyRoster(_family!, overwriteName: overwriteName);
     } catch (e) {
-      error = 'Could not save family members: $e';
+      error = _cloudWriteError(e, 'family members');
     } finally {
       _setBusy(false);
     }
