@@ -441,6 +441,9 @@ class AppState extends ChangeNotifier {
     // Refresh the on-device cache with whatever we now hold.
     await _cacheAll();
 
+    // Auto-book any due recurring payments the user opted to auto-record.
+    await _autoPostDueRecurring();
+
     // The head surfaces any pending join requests (no-op for everyone else).
     await loadJoinRequests();
 
@@ -703,6 +706,84 @@ class AppState extends ChangeNotifier {
     _celebrate(addExpense && r.amount > 0
         ? 'Marked paid · expense added'
         : 'Marked paid');
+  }
+
+  /// Auto-book expenses for any active recurring reminder marked "auto-record"
+  /// whose due date has arrived — one expense per missed occurrence, dated on
+  /// that occurrence — then roll the reminder forward to its next future due
+  /// date. Runs once on load. The advanced due date plus a deterministic
+  /// expense id make it idempotent: a re-run posts nothing already booked.
+  /// Occurrences older than a year are skipped (schedule still advances) so a
+  /// long absence can't flood the ledger with ancient entries.
+  Future<void> _autoPostDueRecurring() async {
+    if (_personal == null) return;
+    final now = DateTime.now();
+    final todayEnd = DateTime(now.year, now.month, now.day, 23, 59, 59);
+    final floor = DateTime(now.year - 1, now.month, now.day);
+
+    var personalChanged = false;
+    var familyChanged = false;
+    var posted = 0;
+    var postedTotal = 0.0;
+
+    for (final r in _personal!.reminders) {
+      if (!r.active || !r.autoPost) continue;
+      if (r.recurrence == Recurrence.none || r.amount <= 0) continue;
+
+      var guard = 0;
+      while (!r.dueDate.isAfter(todayEnd) && guard < 60) {
+        guard++;
+        final occ = r.dueDate;
+        // Book only recent occurrences; still advance past stale ones.
+        if (!occ.isBefore(floor)) {
+          final id = 'auto_${r.id}_${occ.year}'
+              '${occ.month.toString().padLeft(2, '0')}'
+              '${occ.day.toString().padLeft(2, '0')}';
+          if (!_personal!.expenses.any((e) => e.id == id)) {
+            _ensureCategory(r.expenseCategory, r.iconKey);
+            final expense = Expense(
+              id: id,
+              date: occ,
+              category: r.expenseCategory,
+              amount: r.amount,
+              paymentMode: 'Auto',
+              notes: '${r.title} (auto)',
+            );
+            _personal!.expenses.add(expense);
+            posted++;
+            postedTotal += r.amount;
+            if (_mirrorToFamily(
+              id: expense.id,
+              date: expense.date,
+              type: 'expense',
+              category: expense.category,
+              amount: expense.amount,
+              notes: expense.notes,
+            )) {
+              familyChanged = true;
+            }
+          }
+        }
+        r.lastPaidDate = occ;
+        r.dueDate = r.nextOccurrenceAfter(occ);
+        personalChanged = true;
+      }
+    }
+
+    if (posted > 0) {
+      _logActivity('Auto-recorded', 'Recurring',
+          '$posted recurring payment${posted == 1 ? '' : 's'}', postedTotal);
+    }
+    if (familyChanged) await _persistFamilyEntries();
+    if (personalChanged) await _persistPersonal();
+    if (posted > 0) {
+      await NotificationService.showNow(
+        id: 'autopost'.hashCode & 0x7fffffff,
+        title: 'Recurring payments recorded',
+        body: '$posted payment${posted == 1 ? '' : 's'} booked automatically'
+            ' · ${Fmt.currency(postedTotal, code: currency)}',
+      );
+    }
   }
 
   // --- salary ----------------------------------------------------------------

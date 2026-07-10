@@ -179,7 +179,8 @@ class _SubCard extends StatelessWidget {
                               ?.copyWith(fontWeight: FontWeight.bold)),
                       const SizedBox(height: 2),
                       Text(
-                        '${r.recurrenceLabel} · next ${Fmt.date(r.dueDate)}',
+                        '${r.recurrenceLabel}${r.autoPost ? ' · Auto' : ''}'
+                        ' · next ${Fmt.date(r.dueDate)}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.bodySmall

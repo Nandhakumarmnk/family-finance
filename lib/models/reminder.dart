@@ -30,6 +30,11 @@ class Reminder {
   String notes;
   bool active;
 
+  /// When true, a recurring reminder auto-books its expense as each due date
+  /// arrives (like a subscription auto-charge) instead of waiting for the user
+  /// to mark it paid. Ignored for one-time reminders.
+  bool autoPost;
+
   /// When the user last marked this paid (null until first payment).
   DateTime? lastPaidDate;
 
@@ -42,6 +47,7 @@ class Reminder {
     Recurrence recurrence = Recurrence.monthly,
     this.notes = '',
     this.active = true,
+    this.autoPost = false,
     this.lastPaidDate,
   })  : kindKey = kind.name,
         recurrenceKey = recurrence.name;
@@ -129,6 +135,7 @@ class Reminder {
         active ? 'yes' : 'no',
         lastPaidDate?.toIso8601String() ?? '',
         notes,
+        autoPost ? 'yes' : 'no',
       ];
 
   static const List<String> header = [
@@ -141,6 +148,7 @@ class Reminder {
     'active',
     'lastPaidDate',
     'notes',
+    'autoPost',
   ];
 
   factory Reminder.fromRow(List<dynamic> r) {
@@ -162,6 +170,8 @@ class Reminder {
       active: at(6).isEmpty ? true : at(6).toLowerCase() == 'yes',
       lastPaidDate: last.isEmpty ? null : DateTime.tryParse(last),
       notes: at(8),
+      // Appended last for backward compatibility; older 9-column rows → false.
+      autoPost: at(9).toLowerCase() == 'yes',
     );
   }
 }

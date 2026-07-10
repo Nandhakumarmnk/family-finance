@@ -442,6 +442,7 @@ class _ReminderFormState extends State<_ReminderForm> {
   late Recurrence _recurrence;
   late DateTime _due;
   late bool _active;
+  late bool _autoPost;
   bool _saving = false;
 
   bool get _isEdit => widget.existing != null;
@@ -458,6 +459,7 @@ class _ReminderFormState extends State<_ReminderForm> {
     _recurrence = e?.recurrence ?? Recurrence.monthly;
     _due = e?.dueDate ?? DateTime.now().add(const Duration(days: 1));
     _active = e?.active ?? true;
+    _autoPost = e?.autoPost ?? false;
   }
 
   static String _trimAmount(double v) =>
@@ -485,6 +487,8 @@ class _ReminderFormState extends State<_ReminderForm> {
       recurrence: _recurrence,
       notes: _notes.text.trim(),
       active: _active,
+      // Auto-post only makes sense for repeating reminders.
+      autoPost: _recurrence != Recurrence.none && _autoPost,
       lastPaidDate: widget.existing?.lastPaidDate,
     );
     if (_isEdit) {
@@ -572,6 +576,18 @@ class _ReminderFormState extends State<_ReminderForm> {
                 ],
                 onChanged: (v) => setState(() => _recurrence = v ?? _recurrence),
               ),
+              if (_recurrence != Recurrence.none) ...[
+                const SizedBox(height: 4),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Auto-record on due date'),
+                  subtitle: const Text(
+                      'Books the expense automatically when it falls due — '
+                      'no need to mark it paid'),
+                  value: _autoPost,
+                  onChanged: (v) => setState(() => _autoPost = v),
+                ),
+              ],
               const SizedBox(height: 12),
               TextFormField(
                 controller: _notes,
