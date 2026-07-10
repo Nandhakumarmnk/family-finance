@@ -17,7 +17,7 @@ class RemindersScreen extends StatefulWidget {
   @override
   State<RemindersScreen> createState() => _RemindersScreenState();
 
-  static void _openForm(BuildContext context,
+  static void openForm(BuildContext context,
       {Reminder? existing, ReminderKind? kind}) {
     showModalBottomSheet(
       context: context,
@@ -65,7 +65,7 @@ class _RemindersScreenState extends State<RemindersScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Payment reminders')),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => RemindersScreen._openForm(context),
+        onPressed: () => RemindersScreen.openForm(context),
         icon: const Icon(Icons.add_alert_outlined),
         label: const Text('Add reminder'),
       ),
@@ -73,7 +73,7 @@ class _RemindersScreenState extends State<RemindersScreen> {
         maxWidth: 720,
         child: !hasAny
             ? _EmptyReminders(
-                onPick: (k) => RemindersScreen._openForm(context, kind: k))
+                onPick: (k) => RemindersScreen.openForm(context, kind: k))
             : Column(
                 children: [
                   Padding(
@@ -341,7 +341,7 @@ class _ReminderCard extends StatelessWidget {
     final s = context.read<AppState>();
     switch (v) {
       case 'edit':
-        RemindersScreen._openForm(context, existing: reminder);
+        RemindersScreen.openForm(context, existing: reminder);
         break;
       case 'paidonly':
         s.markReminderPaid(reminder.id, addExpense: false);

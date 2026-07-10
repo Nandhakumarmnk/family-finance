@@ -17,6 +17,8 @@ import 'notification_settings_screen.dart';
 import 'reminders_screen.dart';
 import 'reports_export_screen.dart';
 import 'salary_screen.dart';
+import 'settle_up_screen.dart';
+import 'subscriptions_screen.dart';
 
 /// One tidy home for everything configurable — profile, money tools, insights
 /// and preferences — instead of a long pop-up menu. This is the app's
@@ -71,6 +73,12 @@ class SettingsScreen extends StatelessWidget {
                 onTap: () => _push(context, const RemindersScreen()),
               ),
               _NavTile(
+                icon: Icons.subscriptions_outlined,
+                title: 'Subscriptions',
+                subtitle: 'Recurring payments · monthly & yearly total',
+                onTap: () => _push(context, const SubscriptionsScreen()),
+              ),
+              _NavTile(
                 icon: Icons.savings_outlined,
                 title: 'Budgets',
                 subtitle: 'Per-category monthly limits',
@@ -100,6 +108,13 @@ class SettingsScreen extends StatelessWidget {
                   title: 'Family analytics',
                   subtitle: 'Per-member spending insights',
                   onTap: () => _push(context, const MemberAnalyticsScreen()),
+                ),
+              if (s.inFamily)
+                _NavTile(
+                  icon: Icons.balance_outlined,
+                  title: 'Settle up',
+                  subtitle: 'Who owes whom in the shared wallet',
+                  onTap: () => _push(context, const SettleUpScreen()),
                 ),
               _NavTile(
                 icon: Icons.history,
