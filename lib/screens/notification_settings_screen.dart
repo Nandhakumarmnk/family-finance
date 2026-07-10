@@ -55,83 +55,93 @@ class NotificationSettingsScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 12),
-            if (kIsWeb)
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(Icons.desktop_windows_outlined,
-                              color: theme.colorScheme.primary),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text('Browser notifications',
-                                style: theme.textTheme.titleMedium
-                                    ?.copyWith(fontWeight: FontWeight.bold)),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Show alerts in your computer’s notification centre. '
-                        'Due-payment and family alerts appear here while the app '
-                        'is open in the browser. (Alerts when the browser is '
-                        'fully closed need the mobile app.)',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant),
-                      ),
-                      const SizedBox(height: 12),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: FilledButton.icon(
-                          onPressed: () => _enableAndTestWeb(context),
-                          icon:
-                              const Icon(Icons.notifications_active_outlined),
-                          label: const Text('Enable & send test'),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                            kIsWeb
+                                ? Icons.desktop_windows_outlined
+                                : Icons.phone_android,
+                            color: theme.colorScheme.primary),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                              kIsWeb
+                                  ? 'Browser notifications'
+                                  : 'Device notifications',
+                              style: theme.textTheme.titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.bold)),
                         ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      kIsWeb
+                          ? 'Show alerts in your computer’s notification centre '
+                              'while the app is open in the browser.'
+                          : 'Allow notifications so payment reminders, family '
+                              'requests and auto-recorded payments show in your '
+                              'phone’s notification tray. Tap below and choose '
+                              '“Allow” if Android asks.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                    const SizedBox(height: 12),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: FilledButton.icon(
+                        onPressed: () => _enableAndTest(context),
+                        icon: const Icon(Icons.notifications_active_outlined),
+                        label: const Text('Enable & send test'),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-              )
-            else
+              ),
+            ),
+            if (!kIsWeb) ...[
+              const SizedBox(height: 8),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4),
                 child: Text(
-                  'Alerts appear in your phone’s notification tray even when '
-                  'the app is closed. They’re scheduled on-device — no server, '
-                  'no cost.',
+                  'Scheduled reminder alerts appear in your phone’s tray even '
+                  'when the app is closed. They’re on-device — no server, no cost.',
                   style: theme.textTheme.bodySmall
                       ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                 ),
               ),
+            ],
           ],
         ),
       ),
     );
   }
 
-  /// Ask the browser for notification permission (from this click gesture) and
-  /// fire a test notification into the OS notification centre.
-  Future<void> _enableAndTestWeb(BuildContext context) async {
+  /// Ask the OS for notification permission (from this click gesture) and fire
+  /// a test notification into the notification tray / centre.
+  Future<void> _enableAndTest(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
-    final granted = await NotificationService.requestWebPermission();
+    final granted = await NotificationService.requestPermission();
     if (granted) {
       await NotificationService.showNow(
         id: 1,
         title: 'Notifications enabled ✓',
-        body: 'Family Finance alerts will appear in your notification centre.',
+        body: 'Family Finance alerts will now appear here.',
       );
       messenger.showSnackBar(const SnackBar(
-          content: Text('Test sent — check your notification centre.')));
+          content: Text('Test sent — check your notifications.')));
     } else {
-      messenger.showSnackBar(const SnackBar(
-        content: Text(
-            'Notifications are blocked. Click the lock icon in the address '
-            'bar → Site settings → allow Notifications, then try again.'),
+      messenger.showSnackBar(SnackBar(
+        content: Text(kIsWeb
+            ? 'Notifications are blocked. Click the lock icon in the address '
+                'bar → Site settings → allow Notifications, then try again.'
+            : 'Notifications are blocked. Open Android Settings → Apps → '
+                'Family Finance → Notifications and turn them on.'),
       ));
     }
   }

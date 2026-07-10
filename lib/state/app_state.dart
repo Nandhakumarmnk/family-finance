@@ -120,9 +120,9 @@ class AppState extends ChangeNotifier {
   Future<void> setNotificationsEnabled(bool value) async {
     if (_personal == null) return;
     _personal!.profile.notificationsEnabled = value;
-    // Enabling is a user gesture — a good moment to ask the browser for
-    // permission to post notifications to the OS notification centre (web only).
-    if (value && kIsWeb) await NotificationService.requestWebPermission();
+    // Enabling is a user gesture — a good moment to ask the OS for permission
+    // (Android 13+ POST_NOTIFICATIONS, or the browser on web).
+    if (value) await NotificationService.requestPermission();
     await _persistPersonal();
     _celebrate(value ? 'Notifications on' : 'Notifications off');
   }

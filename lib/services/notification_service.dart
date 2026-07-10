@@ -32,6 +32,36 @@ class NotificationService {
     return WebNotifier.requestPermission();
   }
 
+  /// Ask the OS for permission to post notifications — the browser on web, or
+  /// Android 13+ (POST_NOTIFICATIONS) / iOS on mobile. Returns true if granted.
+  /// Must be called from a user gesture (a button tap) so the system dialog can
+  /// actually appear.
+  static Future<bool> requestPermission() async {
+    if (kIsWeb) return WebNotifier.requestPermission();
+    if (!_ready) await init();
+    try {
+      final android = _plugin.resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
+      if (android != null) {
+        final granted = await android.requestNotificationsPermission();
+        if (granted != null) return granted;
+        // Older Androids (<13) don't need the runtime permission.
+        final enabled = await android.areNotificationsEnabled();
+        return enabled ?? true;
+      }
+      final ios = _plugin.resolvePlatformSpecificImplementation<
+          IOSFlutterLocalNotificationsPlugin>();
+      if (ios != null) {
+        final g = await ios.requestPermissions(
+            alert: true, badge: true, sound: true);
+        return g ?? true;
+      }
+      return true;
+    } catch (_) {
+      return true;
+    }
+  }
+
   /// Current web notification permission ('granted' | 'denied' | 'default' |
   /// 'unsupported'); always 'granted' on mobile.
   static String webPermissionState() =>
