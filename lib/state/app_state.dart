@@ -120,6 +120,9 @@ class AppState extends ChangeNotifier {
   Future<void> setNotificationsEnabled(bool value) async {
     if (_personal == null) return;
     _personal!.profile.notificationsEnabled = value;
+    // Enabling is a user gesture — a good moment to ask the browser for
+    // permission to post notifications to the OS notification centre (web only).
+    if (value && kIsWeb) await NotificationService.requestWebPermission();
     await _persistPersonal();
     _celebrate(value ? 'Notifications on' : 'Notifications off');
   }
@@ -443,6 +446,10 @@ class AppState extends ChangeNotifier {
 
     // Auto-book any due recurring payments the user opted to auto-record.
     await _autoPostDueRecurring();
+
+    // On web, surface due payments in the browser's notification centre (once
+    // per day). Mobile uses scheduled tray notifications instead.
+    await _notifyDueRemindersOnWeb();
 
     // The head surfaces any pending join requests (no-op for everyone else).
     await loadJoinRequests();
@@ -1292,6 +1299,33 @@ class AppState extends ChangeNotifier {
     } catch (_) {/* best-effort */}
     _joinRequests = _joinRequests.where((r) => r.email != req.email).toList();
     _celebrate('${member.name} approved');
+  }
+
+  /// On the web, show a once-a-day browser notification (in the OS notification
+  /// centre) summarising payments that are due or overdue. No-op on mobile
+  /// (which schedules real tray notifications) and when notifications are off
+  /// or the browser hasn't granted permission.
+  Future<void> _notifyDueRemindersOnWeb() async {
+    if (!kIsWeb || !notificationsEnabled) return;
+    final due = dueReminders;
+    if (due.isEmpty) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final now = DateTime.now();
+      final stamp = '${now.year}-${now.month}-${now.day}';
+      final key = 'web_due_notified_${_personal?.profile.email ?? ''}';
+      if (prefs.getString(key) == stamp) return; // already notified today
+      await prefs.setString(key, stamp);
+      final first = due.first;
+      final more = due.length - 1;
+      await NotificationService.showNow(
+        id: 'web_due'.hashCode & 0x7fffffff,
+        title: due.length == 1 ? 'Payment due' : '${due.length} payments due',
+        body: more > 0
+            ? '${first.title} and $more more need attention'
+            : '${first.title} is due',
+      );
+    } catch (_) {/* best-effort */}
   }
 
   /// Decline a pending request without granting access. Head-only.

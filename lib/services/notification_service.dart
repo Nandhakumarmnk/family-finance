@@ -5,6 +5,7 @@ import 'package:timezone/timezone.dart' as tz;
 
 import '../models/reminder.dart';
 import '../utils/format.dart';
+import 'web_notifier.dart';
 
 /// Schedules **device** notifications for upcoming payment reminders. They show
 /// up in the phone's notification tray (like WhatsApp or email) and fire even
@@ -23,9 +24,28 @@ class NotificationService {
   static const String _alertChannelId = 'family_alerts';
   static const String _alertChannelName = 'Family alerts';
 
+  /// Request the browser's notification permission (web only). Returns true if
+  /// granted, or true on mobile where OS notifications don't need it here. Best
+  /// called from a user gesture on the web.
+  static Future<bool> requestWebPermission() async {
+    if (!kIsWeb) return true;
+    return WebNotifier.requestPermission();
+  }
+
+  /// Current web notification permission ('granted' | 'denied' | 'default' |
+  /// 'unsupported'); always 'granted' on mobile.
+  static String webPermissionState() =>
+      kIsWeb ? WebNotifier.permission : 'granted';
+
   /// One-time setup: init the plugin, the timezone DB, and request permission.
   static Future<void> init() async {
-    if (kIsWeb || _ready) return;
+    if (kIsWeb) {
+      // On web there's no plugin to init; just make sure we can show browser
+      // notifications. Best-effort — may need a user gesture to prompt.
+      await WebNotifier.requestPermission();
+      return;
+    }
+    if (_ready) return;
     try {
       tzdata.initializeTimeZones();
       const android = AndroidInitializationSettings('@mipmap/ic_launcher');
@@ -114,7 +134,11 @@ class NotificationService {
     required String title,
     required String body,
   }) async {
-    if (kIsWeb) return;
+    if (kIsWeb) {
+      // Web → browser Notification API (shows in the OS notification centre).
+      WebNotifier.show(title, body);
+      return;
+    }
     if (!_ready) await init();
     if (!_ready) return;
     try {

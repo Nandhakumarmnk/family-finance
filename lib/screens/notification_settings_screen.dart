@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../services/notification_service.dart';
 import '../state/app_state.dart';
 import '../widgets/common.dart';
 
@@ -56,12 +57,43 @@ class NotificationSettingsScreen extends StatelessWidget {
             const SizedBox(height: 12),
             if (kIsWeb)
               Card(
-                color: theme.colorScheme.surfaceContainerHighest,
-                child: const Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Text(
-                    'Note: scheduled device notifications work on the mobile '
-                    'app. On the web the reminders list still shows what’s due.',
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.desktop_windows_outlined,
+                              color: theme.colorScheme.primary),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text('Browser notifications',
+                                style: theme.textTheme.titleMedium
+                                    ?.copyWith(fontWeight: FontWeight.bold)),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Show alerts in your computer’s notification centre. '
+                        'Due-payment and family alerts appear here while the app '
+                        'is open in the browser. (Alerts when the browser is '
+                        'fully closed need the mobile app.)',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant),
+                      ),
+                      const SizedBox(height: 12),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: FilledButton.icon(
+                          onPressed: () => _enableAndTestWeb(context),
+                          icon:
+                              const Icon(Icons.notifications_active_outlined),
+                          label: const Text('Enable & send test'),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               )
@@ -80,6 +112,28 @@ class NotificationSettingsScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  /// Ask the browser for notification permission (from this click gesture) and
+  /// fire a test notification into the OS notification centre.
+  Future<void> _enableAndTestWeb(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final granted = await NotificationService.requestWebPermission();
+    if (granted) {
+      await NotificationService.showNow(
+        id: 1,
+        title: 'Notifications enabled ✓',
+        body: 'Family Finance alerts will appear in your notification centre.',
+      );
+      messenger.showSnackBar(const SnackBar(
+          content: Text('Test sent — check your notification centre.')));
+    } else {
+      messenger.showSnackBar(const SnackBar(
+        content: Text(
+            'Notifications are blocked. Click the lock icon in the address '
+            'bar → Site settings → allow Notifications, then try again.'),
+      ));
+    }
   }
 
   static String _fmtHour(int h) {
