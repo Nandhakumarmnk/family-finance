@@ -10,6 +10,7 @@ import 'expenses_screen.dart';
 import 'family_screen.dart';
 import 'reminders_screen.dart';
 import 'reports_screen.dart';
+import 'search_screen.dart';
 import 'settings_screen.dart';
 
 /// Main authenticated shell: bottom navigation between the primary screens,
@@ -54,6 +55,11 @@ class _HomeShellState extends State<HomeShell> {
                 ),
               ),
             ),
+          IconButton(
+            tooltip: 'Search transactions',
+            icon: const Icon(Icons.search),
+            onPressed: () => _push(context, const SearchScreen()),
+          ),
           _reminderBell(context, state),
           IconButton(
             tooltip: 'Settings',

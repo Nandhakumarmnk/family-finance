@@ -152,6 +152,9 @@ class _MasterScreenState extends State<MasterScreen> {
                 Expanded(
                   child: SelectableText(
                     s.familyCode,
+                    // Keep it on one line — under any width the code must never
+                    // wrap character-by-character into a vertical column.
+                    maxLines: 1,
                     style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w700, letterSpacing: 0.5),
                   ),
@@ -245,26 +248,77 @@ class _MasterScreenState extends State<MasterScreen> {
 
   /// A pending "request to join", shown to the head with Approve / Decline. The
   /// head can pick the role the approved member gets.
+  ///
+  /// Laid out as name/email on top and the actions on their own row below —
+  /// never as a `ListTile` with both buttons in `trailing`, which squeezed the
+  /// email to zero width (rendering it one letter per line) and pushed the
+  /// Approve button off-screen so it couldn't be tapped.
   Widget _requestTile(BuildContext context, AppState s, JoinRequest r) {
-    final name = r.name.trim().isEmpty ? r.email.split('@').first : r.name.trim();
+    final theme = Theme.of(context);
+    final name =
+        r.name.trim().isEmpty ? r.email.split('@').first : r.name.trim();
     return Card(
-      color: Theme.of(context).colorScheme.tertiaryContainer,
-      child: ListTile(
-        leading: const CircleAvatar(child: Icon(Icons.person_add_alt_1)),
-        title: Text(name),
-        subtitle: Text(r.email + (r.phone.isEmpty ? '' : '\n${r.phone}')),
-        isThreeLine: r.phone.isNotEmpty,
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
+      color: theme.colorScheme.tertiaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 14, 12, 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            TextButton(
-              onPressed: () => s.declineJoinRequestFor(r),
-              child: const Text('Decline'),
+            Row(
+              children: [
+                CircleAvatar(
+                  backgroundColor: theme.colorScheme.tertiary,
+                  foregroundColor: theme.colorScheme.onTertiary,
+                  child: Text(name.isEmpty ? '?' : name[0].toUpperCase()),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        r.email,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant),
+                      ),
+                      if (r.phone.isNotEmpty)
+                        Text(
+                          r.phone,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(width: 4),
-            FilledButton(
-              onPressed: () => _approveDialog(context, s, r),
-              child: const Text('Approve'),
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: () => s.declineJoinRequestFor(r),
+                  child: const Text('Decline'),
+                ),
+                const SizedBox(width: 8),
+                FilledButton.icon(
+                  onPressed: () => _approveDialog(context, s, r),
+                  icon: const Icon(Icons.check, size: 18),
+                  label: const Text('Approve'),
+                ),
+              ],
             ),
           ],
         ),

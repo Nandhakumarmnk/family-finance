@@ -1149,10 +1149,42 @@ class AppState extends ChangeNotifier {
     }
     try {
       _joinRequests = await _repo!.loadJoinRequests(familyCode);
+      await _notifyNewJoinRequests(_joinRequests);
     } catch (_) {
       _joinRequests = const [];
     }
     notifyListeners();
+  }
+
+  /// Raise a device (tray) notification for any join request the head hasn't
+  /// been told about yet. Keyed by email in SharedPreferences so each request
+  /// notifies only once — even across app restarts — while a declined-and-
+  /// re-requested user can notify again. Best-effort, Android/iOS only (the
+  /// service is a no-op on web).
+  Future<void> _notifyNewJoinRequests(List<JoinRequest> requests) async {
+    if (requests.isEmpty) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = 'notified_join_$familyCode';
+      final seen = prefs.getStringList(key)?.toSet() ?? <String>{};
+      for (final r in requests) {
+        if (seen.contains(r.email)) continue;
+        seen.add(r.email);
+        final name = r.name.trim().isEmpty
+            ? r.email.split('@').first
+            : r.name.trim();
+        await NotificationService.showNow(
+          id: 'join_${r.email}'.hashCode & 0x7fffffff,
+          title: 'New request to join',
+          body: '$name wants to join ${_family?.familyName ?? 'your family'}',
+        );
+      }
+      // Forget emails that are no longer pending, so a fresh request re-notifies.
+      final pending = requests.map((r) => r.email).toSet();
+      await prefs.setStringList(key, seen.intersection(pending).toList());
+    } catch (_) {
+      // Best-effort — never let a notification failure break loading requests.
+    }
   }
 
   /// Approve a requester into the roster with [role], then clear their request.

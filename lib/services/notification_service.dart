@@ -20,6 +20,9 @@ class NotificationService {
   static const String _channelId = 'payment_reminders';
   static const String _channelName = 'Payment reminders';
 
+  static const String _alertChannelId = 'family_alerts';
+  static const String _alertChannelName = 'Family alerts';
+
   /// One-time setup: init the plugin, the timezone DB, and request permission.
   static Future<void> init() async {
     if (kIsWeb || _ready) return;
@@ -99,6 +102,36 @@ class NotificationService {
       }
     } catch (_) {
       // Best-effort — a scheduling failure must never disrupt the app.
+    }
+  }
+
+  /// Show an **immediate** tray notification (Android/iOS) for something we
+  /// learned about while the app is running — e.g. a new request to join the
+  /// family. Unlike [sync], this isn't scheduled: it pops right away. No-op on
+  /// web and always best-effort so it can never disrupt the app.
+  static Future<void> showNow({
+    required int id,
+    required String title,
+    required String body,
+  }) async {
+    if (kIsWeb) return;
+    if (!_ready) await init();
+    if (!_ready) return;
+    try {
+      const details = NotificationDetails(
+        android: AndroidNotificationDetails(
+          _alertChannelId,
+          _alertChannelName,
+          channelDescription:
+              'Family activity — join requests and shared updates',
+          importance: Importance.high,
+          priority: Priority.high,
+        ),
+        iOS: DarwinNotificationDetails(),
+      );
+      await _plugin.show(id, title, body, details);
+    } catch (_) {
+      // Best-effort — a notification failure must never disrupt the app.
     }
   }
 
