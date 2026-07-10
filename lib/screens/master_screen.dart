@@ -147,29 +147,27 @@ class _MasterScreenState extends State<MasterScreen> {
             const Divider(height: 24),
             Text('Family code', style: theme.textTheme.labelMedium),
             const SizedBox(height: 4),
-            Row(
-              children: [
-                Expanded(
-                  child: SelectableText(
-                    s.familyCode,
-                    // Keep it on one line — under any width the code must never
-                    // wrap character-by-character into a vertical column.
-                    maxLines: 1,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700, letterSpacing: 0.5),
-                  ),
+            // Code on its own full-width line, Invite as a full-width button
+            // below it — no trailing widget that could be clipped off the row.
+            SelectableText(
+              s.familyCode,
+              maxLines: 1,
+              style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700, letterSpacing: 0.5),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.tonalIcon(
+                onPressed: () => showInviteSheet(
+                  context,
+                  familyName: s.family?.familyName ?? '',
+                  familyCode: s.familyCode,
+                  inviterName: s.profile?.displayName ?? '',
                 ),
-                FilledButton.tonalIcon(
-                  onPressed: () => showInviteSheet(
-                    context,
-                    familyName: s.family?.familyName ?? '',
-                    familyCode: s.familyCode,
-                    inviterName: s.profile?.displayName ?? '',
-                  ),
-                  icon: const Icon(Icons.person_add_alt, size: 18),
-                  label: const Text('Invite'),
-                ),
-              ],
+                icon: const Icon(Icons.person_add_alt, size: 18),
+                label: const Text('Invite a member'),
+              ),
             ),
           ],
         ),
@@ -258,17 +256,16 @@ class _MasterScreenState extends State<MasterScreen> {
     final name =
         r.name.trim().isEmpty ? r.email.split('@').first : r.name.trim();
     return Card(
-      color: theme.colorScheme.tertiaryContainer,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 14, 12, 10),
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
                 CircleAvatar(
-                  backgroundColor: theme.colorScheme.tertiary,
-                  foregroundColor: theme.colorScheme.onTertiary,
+                  backgroundColor: theme.colorScheme.tertiaryContainer,
+                  foregroundColor: theme.colorScheme.onTertiaryContainer,
                   child: Text(name.isEmpty ? '?' : name[0].toUpperCase()),
                 ),
                 const SizedBox(width: 12),
@@ -304,19 +301,25 @@ class _MasterScreenState extends State<MasterScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
+            // Full-width Expanded buttons: they share the row's width so the
+            // Approve action can never be pushed off-screen or clipped, whatever
+            // the surrounding constraints do.
             Row(
-              mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                TextButton(
-                  onPressed: () => s.declineJoinRequestFor(r),
-                  child: const Text('Decline'),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => s.declineJoinRequestFor(r),
+                    child: const Text('Decline'),
+                  ),
                 ),
-                const SizedBox(width: 8),
-                FilledButton.icon(
-                  onPressed: () => _approveDialog(context, s, r),
-                  icon: const Icon(Icons.check, size: 18),
-                  label: const Text('Approve'),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: () => _approveDialog(context, s, r),
+                    icon: const Icon(Icons.check, size: 18),
+                    label: const Text('Approve'),
+                  ),
                 ),
               ],
             ),
