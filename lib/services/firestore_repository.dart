@@ -240,11 +240,21 @@ class FirestoreRepository implements FinanceStore {
   Future<void> saveFamilyRoster(FamilyData data,
       {bool overwriteName = false}) async {
     final famRef = _families.doc(data.familyId);
-    await famRef.set({
+
+    // Stamp the head into `ownerEmail` so a family created before that field
+    // existed (or that otherwise lost it) heals itself: the rules let a member
+    // claim an ownerless family by writing their own email here, and treat
+    // re-writing the unchanged owner as a no-op. Only the head reaches this
+    // code (every caller gates on isFamilyHead), so the roster's Owner is us.
+    final head = data.members
+        .where((m) => m.role.toLowerCase() == 'owner' && m.email.isNotEmpty);
+    final famDoc = <String, dynamic>{
       'familyName': data.familyName,
       'memberEmails': data.members.map((m) => m.email).toList(),
       'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    };
+    if (head.isNotEmpty) famDoc['ownerEmail'] = head.first.email;
+    await famRef.set(famDoc, SetOptions(merge: true));
 
     final ops = <void Function(WriteBatch)>[];
     await _collectReconcile(

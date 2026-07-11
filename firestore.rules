@@ -55,6 +55,18 @@ service cloud.firestore {
       function ownerUnchanged() {
         return request.resource.data.ownerEmail == resource.data.ownerEmail;
       }
+      // A family created before `ownerEmail` existed (legacy docs) has no head
+      // recorded server-side, so every head-only write would be blocked forever
+      // — even a corrective one. Detect that ownerless state so a current member
+      // can adopt it exactly once (see the `update` rule below).
+      function ownerless() {
+        return !('ownerEmail' in resource.data)
+          || resource.data.ownerEmail == null
+          || resource.data.ownerEmail == '';
+      }
+      function claimingSelfAsOwner() {
+        return request.resource.data.ownerEmail == email();
+      }
 
       // Subcollection rules can't see the parent via `resource`, so fetch it.
       function familyData() {
@@ -80,9 +92,15 @@ service cloud.firestore {
         && request.resource.data.memberEmails.hasOnly([email()]);
 
       // Only the head edits the family doc — rename, and approve/remove members
-      // by editing memberEmails. `ownerEmail` can NEVER change: this is what
-      // blocks a code-holder from making themselves the head.
-      allow update: if isOwner() && ownerUnchanged();
+      // by editing memberEmails. `ownerEmail` can NEVER change once set: this is
+      // what blocks a code-holder from making themselves the head.
+      //
+      // The second branch heals legacy ownerless families: an ALREADY-APPROVED
+      // member (in memberEmails — a code-holder who hasn't been approved is not)
+      // may stamp THEIR OWN email as the head, one time. Once set, only the
+      // first branch applies, so the owner is immutable again.
+      allow update: if (isOwner() && ownerUnchanged())
+        || (ownerless() && isMember() && claimingSelfAsOwner());
 
       // Only the head can delete the whole family.
       allow delete: if isOwner();
